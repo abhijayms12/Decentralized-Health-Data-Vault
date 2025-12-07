@@ -1,0 +1,33 @@
+{
+  "name": "health-vault",
+  "version": "1.0.0",
+  "description": "Decentralized Health Data Vault using Hardhat, Solidity, React, and IPFS",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.js --network sepolia",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost"
+  },
+  "keywords": [
+    "blockchain",
+    "health",
+    "ipfs",
+    "ethereum",
+    "solidity",
+    "hardhat"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^17.2.3",
+    "ethers": "^6.16.0",
+    "form-data": "^4.0.5"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "hardhat": "^2.22.10"
+  }
+}
