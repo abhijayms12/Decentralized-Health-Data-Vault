@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import axios from "axios";
-import { decryptFile, decryptAndDownload } from "../utils/decrypt.js";
+import { decryptFile } from "../utils/decrypt.js";
+import { retrieveKey } from "../utils/encryption.js";
+import { downloadFromIPFS } from "../utils/ipfs.js";
 
 // TODO: Build a UI that:
 // 1. Takes a patient address as input.
@@ -14,8 +15,26 @@ export default function DoctorDashboard({ contract, account }) {
   const [patientAddress, setPatientAddress] = useState("");
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [downloadingCID, setDownloadingCID] = useState(null); // Track which file is downloading
   const [message, setMessage] = useState("");
-  const [decryptedFiles, setDecryptedFiles] = useState({});
+  const [encryptionKey, setEncryptionKey] = useState(null);
+
+  // FIXED: Initialize encryption key with error handling
+  useEffect(() => {
+    const initKey = async () => {
+      try {
+        const key = await retrieveKey();
+        if (key) {
+          setEncryptionKey(key);
+        } else {
+          console.warn("No encryption key found - files cannot be decrypted");
+        }
+      } catch (error) {
+        console.error("Failed to retrieve encryption key:", error);
+      }
+    };
+    initKey();
+  }, []);
 
   const handleFetchRecords = async (e) => {
     e.preventDefault();
@@ -54,78 +73,85 @@ export default function DoctorDashboard({ contract, account }) {
   };
 
   const handleViewFile = async (cid, index) => {
-    try {
-      setMessage(`Fetching file from IPFS...`);
-      
-      // Fetch encrypted file from Pinata gateway
-      const response = await axios.get(`https://gateway.pinata.cloud/ipfs/${cid}`, {
-        responseType: "text"
-      });
+    if (!encryptionKey) {
+      setMessage("Encryption key not available. Please reconnect your wallet and upload a file first.");
+      return;
+    }
 
-      const encryptedContent = response.data;
+    try {
+      setDownloadingCID(cid);
+      setMessage(`Fetching file from IPFS (may take 30+ seconds)...`);
       
-      // Decrypt the file
-      // Note: In production, the encryption key should be securely managed
-      try {
-        const blob = decryptFile(encryptedContent);
-        const url = window.URL.createObjectURL(blob);
-        
-        // Store decrypted file URL
-        setDecryptedFiles(prev => ({
-          ...prev,
-          [index]: url
-        }));
-        
-        setMessage("File decrypted successfully");
-        
-        // Open in new tab
-        window.open(url, "_blank");
-        
-      } catch (decryptError) {
-        console.error("Decryption error:", decryptError);
-        setMessage("File fetched but decryption failed. Opening encrypted version...");
-        
-        // If decryption fails, open the original file
-        window.open(`https://gateway.pinata.cloud/ipfs/${cid}`, "_blank");
-      }
+      // FIXED: Use IPFS utility with multiple gateway fallbacks
+      const encryptedData = await downloadFromIPFS(cid);
+      
+      setMessage("Decrypting file...");
+      
+      // FIXED: Decrypt using Web Crypto API
+      const blob = await decryptFile(encryptedData, encryptionKey);
+      const url = window.URL.createObjectURL(blob);
+      
+      setMessage("File decrypted successfully");
+      
+      // Open in new tab
+      window.open(url, "_blank");
+      
+      // Clean up URL after a delay
+      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
 
     } catch (error) {
       console.error("Error viewing file:", error);
-      setMessage(`Failed to fetch file: ${error.message}`);
+      if (error.message.includes("Mock file not found")) {
+        setMessage("⚠️ File not found - mock IPFS data is lost on browser restart. Upload files again.");
+      } else if (error.message.includes("All IPFS gateways failed")) {
+        setMessage("File not yet available on IPFS. IPFS propagation can take several minutes. Try again later.");
+      } else {
+        setMessage(`Failed to view file: ${error.message}`);
+      }
+    } finally {
+      setDownloadingCID(null);
     }
   };
 
   const handleDownloadFile = async (cid, index) => {
-    try {
-      setMessage(`Downloading file...`);
-      
-      // Fetch encrypted file from Pinata gateway
-      const response = await axios.get(`https://gateway.pinata.cloud/ipfs/${cid}`, {
-        responseType: "text"
-      });
+    if (!encryptionKey) {
+      setMessage("Encryption key not available. Please reconnect your wallet and upload a file first.");
+      return;
+    }
 
-      const encryptedContent = response.data;
+    try {
+      setDownloadingCID(cid);
+      setMessage(`Downloading file from IPFS...`);
       
-      // Decrypt and download
-      try {
-        decryptAndDownload(encryptedContent, `health-record-${index + 1}`);
-        setMessage("File downloaded successfully");
-      } catch (decryptError) {
-        console.error("Decryption error:", decryptError);
-        setMessage("Decryption failed. Downloading encrypted version...");
-        
-        // If decryption fails, download the encrypted version
-        const link = document.createElement("a");
-        link.href = `https://gateway.pinata.cloud/ipfs/${cid}`;
-        link.download = `health-record-${index + 1}-encrypted`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
+      // FIXED: Use IPFS utility
+      const encryptedData = await downloadFromIPFS(cid);
+      
+      setMessage("Decrypting file...");
+      
+      // FIXED: Decrypt using Web Crypto API
+      const blob = await decryptFile(encryptedData, encryptionKey);
+      
+      // Trigger download
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `health-record-${index + 1}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      setMessage("File downloaded successfully");
 
     } catch (error) {
       console.error("Error downloading file:", error);
-      setMessage(`Failed to download file: ${error.message}`);
+      if (error.message.includes("Mock file not found")) {
+        setMessage("⚠️ File not found - mock IPFS data is lost on browser restart.");
+      } else {
+        setMessage(`Failed to download file: ${error.message}`);
+      }
+    } finally {
+      setDownloadingCID(null);
     }
   };
 
@@ -193,15 +219,17 @@ export default function DoctorDashboard({ contract, account }) {
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleViewFile(record.cid, index)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                      disabled={downloadingCID === record.cid}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      View
+                      {downloadingCID === record.cid ? "Loading..." : "View"}
                     </button>
                     <button
                       onClick={() => handleDownloadFile(record.cid, index)}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                      disabled={downloadingCID === record.cid}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Download
+                      {downloadingCID === record.cid ? "Downloading..." : "Download"}
                     </button>
                   </div>
                 </div>

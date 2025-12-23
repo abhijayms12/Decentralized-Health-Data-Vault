@@ -1,47 +1,37 @@
-import CryptoJS from "crypto-js";
-
-// TODO: Write decryptFile(encryptedText) using AES decryption
-// with ENCRYPTION_KEY.
-// Output must be a Blob for rendering or download.
+/**
+ * Client-side decryption utilities for Health Data Vault
+ * Uses Web Crypto API (AES-GCM) to match encryption.js
+ * FIXED: Now compatible with encryption.js (was using incompatible CryptoJS before)
+ */
 
 /**
- * Decrypt encrypted text using AES and return as Blob
- * @param {string} encryptedText - The encrypted text string
- * @param {string} encryptionKey - The encryption key (optional, defaults to env)
- * @returns {Blob} - Decrypted content as Blob
+ * Decrypt encrypted file data using Web Crypto API (AES-GCM)
+ * @param {Uint8Array} encryptedData - Combined IV + encrypted data
+ * @param {CryptoKey} key - Web Crypto API key from encryption.js
+ * @returns {Promise<Blob>} - Decrypted content as Blob
  */
-export function decryptFile(encryptedText, encryptionKey = null) {
+export async function decryptFile(encryptedData, key) {
   try {
-    // Use provided key or get from environment
-    // Note: In production, the key should be managed securely
-    // and never hardcoded in frontend code
-    const key = encryptionKey || import.meta.env.VITE_ENCRYPTION_KEY;
-    
     if (!key) {
       throw new Error("Encryption key not provided");
     }
 
-    // Decrypt the content using AES
-    const decrypted = CryptoJS.AES.decrypt(encryptedText, key);
+    // Extract IV (first 12 bytes) and encrypted data
+    const iv = encryptedData.slice(0, 12);
+    const data = encryptedData.slice(12);
     
-    // Convert decrypted content to UTF8 string (base64)
-    const decryptedBase64 = decrypted.toString(CryptoJS.enc.Utf8);
+    // Decrypt using Web Crypto API
+    const decryptedData = await crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: iv
+      },
+      key,
+      data
+    );
     
-    if (!decryptedBase64) {
-      throw new Error("Decryption failed - invalid key or corrupted data");
-    }
-    
-    // Convert base64 to binary string
-    const binaryString = atob(decryptedBase64);
-    
-    // Convert binary string to Uint8Array
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    
-    // Create and return Blob
-    return new Blob([bytes]);
+    // Return as Blob for download
+    return new Blob([decryptedData]);
     
   } catch (error) {
     console.error("Decryption error:", error.message);
@@ -51,13 +41,13 @@ export function decryptFile(encryptedText, encryptionKey = null) {
 
 /**
  * Decrypt and download file
- * @param {string} encryptedText - The encrypted text
+ * @param {Uint8Array} encryptedData - Combined IV + encrypted data
+ * @param {CryptoKey} key - Web Crypto API key
  * @param {string} filename - Name for downloaded file
- * @param {string} encryptionKey - Optional encryption key
  */
-export function decryptAndDownload(encryptedText, filename = "decrypted-file", encryptionKey = null) {
+export async function decryptAndDownload(encryptedData, key, filename = "decrypted-file") {
   try {
-    const blob = decryptFile(encryptedText, encryptionKey);
+    const blob = await decryptFile(encryptedData, key);
     
     // Create download link
     const url = window.URL.createObjectURL(blob);
@@ -81,13 +71,13 @@ export function decryptAndDownload(encryptedText, filename = "decrypted-file", e
 
 /**
  * Decrypt file and get data URL for preview
- * @param {string} encryptedText - The encrypted text
- * @param {string} encryptionKey - Optional encryption key
+ * @param {Uint8Array} encryptedData - Combined IV + encrypted data
+ * @param {CryptoKey} key - Web Crypto API key
  * @returns {Promise<string>} - Data URL for preview
  */
-export async function decryptForPreview(encryptedText, encryptionKey = null) {
+export async function decryptForPreview(encryptedData, key) {
   try {
-    const blob = decryptFile(encryptedText, encryptionKey);
+    const blob = await decryptFile(encryptedData, key);
     
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
