@@ -119,29 +119,29 @@ export default function PatientDashboard({ contract, account }) {
 
       // 1. Read file as ArrayBuffer
       const fileData = await readFileAsArrayBuffer(selectedFile);
-      console.log("File read:", fileData.byteLength, "bytes");
+      console.log("✓ File read:", fileData.byteLength, "bytes");
 
       // 2. Encrypt the file
       setUploadProgress("Encrypting file...");
       const { encryptedData } = await encryptFile(fileData, encryptionKey);
-      console.log("File encrypted:", encryptedData.length, "bytes");
+      console.log("✓ File encrypted:", encryptedData.length, "bytes");
 
-      // 3. Upload to IPFS
-      setUploadProgress("Uploading to IPFS...");
+      // 3. Upload to IPFS via Lighthouse
+      setUploadProgress("Uploading to Lighthouse IPFS...");
       const cid = await uploadToIPFS(encryptedData, selectedFile.name);
-      console.log("Uploaded to IPFS, CID:", cid);
+      console.log("✓ Uploaded to IPFS, CID:", cid);
 
       // 4. Store CID on blockchain
       setUploadProgress("Storing record on blockchain...");
       const tx = await contract.addRecord(cid);
-      console.log("Transaction sent:", tx.hash);
+      console.log("✓ Transaction sent:", tx.hash);
       
       setUploadProgress("Waiting for confirmation...");
       await tx.wait();
-      console.log("Transaction confirmed");
+      console.log("✓ Transaction confirmed");
 
       // 5. Success!
-      showMessage("success", `✓ Record added successfully! CID: ${cid.substring(0, 20)}...`);
+      showMessage("success", `✓ Record uploaded to IPFS and stored on blockchain! CID: ${cid.substring(0, 25)}...`);
       setSelectedFile(null);
       setUploadProgress("");
       
@@ -152,7 +152,7 @@ export default function PatientDashboard({ contract, account }) {
       await loadRecords();
 
     } catch (error) {
-      console.error("Upload failed:", error);
+      console.error("❌ Upload failed:", error);
       showMessage("error", "Upload failed: " + error.message);
       setUploadProgress("");
     } finally {
@@ -163,20 +163,23 @@ export default function PatientDashboard({ contract, account }) {
   // Download and decrypt a record
   const handleDownloadRecord = async (record) => {
     if (!encryptionKey) {
-      showMessage("error", "Encryption key not available");
+      showMessage("error", "Encryption key not available. Please sign the message again.");
+      await initializeEncryptionKey();
       return;
     }
 
     try {
-      showMessage("info", "Downloading and decrypting file...");
+      showMessage("info", "Downloading from IPFS...");
 
-      // 1. Download from IPFS
+      // 1. Download from IPFS (may take 10-30 seconds for first download)
       const encryptedData = await downloadFromIPFS(record.cid);
-      console.log("Downloaded from IPFS:", encryptedData.length, "bytes");
+      console.log("✓ Downloaded from IPFS:", encryptedData.length, "bytes");
+
+      showMessage("info", "Decrypting file...");
 
       // 2. Decrypt the file
       const decryptedData = await decryptFile(encryptedData, encryptionKey);
-      console.log("File decrypted:", decryptedData.byteLength, "bytes");
+      console.log("✓ File decrypted:", decryptedData.byteLength, "bytes");
 
       // 3. Create blob and download
       const blob = new Blob([decryptedData], { type: "application/pdf" });
@@ -190,7 +193,7 @@ export default function PatientDashboard({ contract, account }) {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      showMessage("success", "✓ File downloaded successfully");
+      showMessage("success", "✓ File downloaded and decrypted successfully");
 
     } catch (error) {
       console.error("Download failed:", error);
@@ -281,6 +284,28 @@ export default function PatientDashboard({ contract, account }) {
           {message.text}
         </div>
       )}
+
+      {/* ⚠️ MOCK IPFS WARNING */}
+      {import.meta.env.VITE_LIGHTHOUSE_API_KEY === undefined || 
+       import.meta.env.VITE_LIGHTHOUSE_API_KEY === "" || 
+       import.meta.env.VITE_LIGHTHOUSE_API_KEY === "your_lighthouse_api_key_here" ? (
+        <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <svg className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <div>
+              <h3 className="text-yellow-800 font-semibold mb-1">⚠️ Development Mode: Files NOT Persistent</h3>
+              <p className="text-yellow-700 text-sm mb-2">
+                Mock IPFS is active. Uploaded files are stored in browser memory and will be <strong>LOST when you close the browser or refresh the page</strong>.
+              </p>
+              <p className="text-yellow-700 text-sm">
+                <strong>To enable persistent storage:</strong> Set up Lighthouse API key in <code className="bg-yellow-100 px-1 rounded">.env</code> file or implement Express backend server (see <code>QUICKSTART.md</code>).
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* File Upload Section */}
       <div className="bg-white shadow rounded-lg p-6">
@@ -411,16 +436,16 @@ export default function PatientDashboard({ contract, account }) {
                         <span className="font-medium">Date:</span>
                         <span>{formatDate(record.timestamp)}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">CID:</span>
-                        <code className="bg-gray-100 px-2 py-1 rounded text-xs">
-                          {record.cid.substring(0, 30)}...
+                      <div className="flex items-start gap-2">
+                        <span className="font-medium whitespace-nowrap">CID:</span>
+                        <code className="bg-gray-100 px-2 py-1 rounded text-xs break-all">
+                          {record.cid}
                         </code>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-medium">Uploaded by:</span>
                         <code className="bg-gray-100 px-2 py-1 rounded text-xs">
-                          {shortenAddress(record.uploader)}
+                          {record.uploader}
                         </code>
                       </div>
                     </div>

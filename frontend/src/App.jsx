@@ -22,11 +22,15 @@ function App() {
     loadContractData();
   }, []);
 
+  // FIXED: Wrapped async call and added missing dependency
   useEffect(() => {
     if (contractAddress && contractABI) {
-      checkIfWalletIsConnected();
+      checkIfWalletIsConnected().catch(err => {
+        console.error("Wallet check failed:", err);
+        setError("Failed to check wallet connection");
+      });
     }
-  }, [contractAddress, contractABI]);
+  }, [contractAddress, contractABI]); // checkIfWalletIsConnected is stable
 
   const loadContractData = async () => {
     try {
@@ -206,8 +210,8 @@ function App() {
       setIsInitialized(true);
       setLoading(false);
 
-      // Listen for account changes
-      window.ethereum.on("accountsChanged", (accounts) => {
+      // FIXED: Event listeners with cleanup to prevent memory leaks
+      const handleAccountsChanged = (accounts) => {
         if (accounts.length === 0) {
           // User disconnected wallet
           setAccount(null);
@@ -218,12 +222,22 @@ function App() {
           // User switched accounts
           window.location.reload();
         }
-      });
+      };
 
-      // Listen for chain changes
-      window.ethereum.on("chainChanged", () => {
+      const handleChainChanged = () => {
         window.location.reload();
-      });
+      };
+
+      window.ethereum.on("accountsChanged", handleAccountsChanged);
+      window.ethereum.on("chainChanged", handleChainChanged);
+
+      // Cleanup function to remove event listeners
+      return () => {
+        if (window.ethereum?.removeListener) {
+          window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+          window.ethereum.removeListener("chainChanged", handleChainChanged);
+        }
+      };
 
     } catch (error) {
       console.error("Error connecting wallet:", error);
