@@ -1,1 +1,384 @@
-[]
+[
+  {
+    "inputs": [],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "patient",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "accessor",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum HealthVault.Role",
+        "name": "role",
+        "type": "uint8"
+      }
+    ],
+    "name": "AccessGranted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "patient",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "accessor",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum HealthVault.Role",
+        "name": "role",
+        "type": "uint8"
+      }
+    ],
+    "name": "AccessRevoked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "patient",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "cid",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "uploader",
+        "type": "address"
+      }
+    ],
+    "name": "RecordAdded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum HealthVault.Role",
+        "name": "role",
+        "type": "uint8"
+      }
+    ],
+    "name": "RoleAssigned",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_patient",
+        "type": "address"
+      },
+      {
+        "internalType": "string",
+        "name": "_cid",
+        "type": "string"
+      }
+    ],
+    "name": "addDiagnosticRecord",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "_cid",
+        "type": "string"
+      }
+    ],
+    "name": "addRecord",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_user",
+        "type": "address"
+      },
+      {
+        "internalType": "enum HealthVault.Role",
+        "name": "_role",
+        "type": "uint8"
+      }
+    ],
+    "name": "assignRole",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getAnonymizedMetadata",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "totalRecords",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "uniquePatients",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_patient",
+        "type": "address"
+      }
+    ],
+    "name": "getMostRecentRecord",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "cid",
+            "type": "string"
+          },
+          {
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "uploader",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct HealthVault.Record",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_patient",
+        "type": "address"
+      }
+    ],
+    "name": "getRecordCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_patient",
+        "type": "address"
+      }
+    ],
+    "name": "getRecords",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "cid",
+            "type": "string"
+          },
+          {
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "uploader",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct HealthVault.Record[]",
+        "name": "",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_diagnostics",
+        "type": "address"
+      }
+    ],
+    "name": "grantDiagnosticsAccess",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_doctor",
+        "type": "address"
+      }
+    ],
+    "name": "grantDoctorAccess",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_patient",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_diagnostics",
+        "type": "address"
+      }
+    ],
+    "name": "hasDiagnosticsAccess",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_patient",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_doctor",
+        "type": "address"
+      }
+    ],
+    "name": "hasDoctorAccess",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_diagnostics",
+        "type": "address"
+      }
+    ],
+    "name": "revokeDiagnosticsAccess",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_doctor",
+        "type": "address"
+      }
+    ],
+    "name": "revokeDoctorAccess",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "roles",
+    "outputs": [
+      {
+        "internalType": "enum HealthVault.Role",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

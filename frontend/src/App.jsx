@@ -13,20 +13,31 @@ function App() {
   const [provider, setProvider] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Sepolia Chain ID
+  const SEPOLIA_CHAIN_ID = "0xaa36a7"; // 11155111 in decimal
 
   useEffect(() => {
     loadContractData();
-    checkIfWalletIsConnected();
   }, []);
+
+  useEffect(() => {
+    if (contractAddress && contractABI) {
+      checkIfWalletIsConnected();
+    }
+  }, [contractAddress, contractABI]);
 
   const loadContractData = async () => {
     try {
+      console.log("Loading contract data...");
       const addressData = await import("./utils/contractAddress.json");
       const abiData = await import("./utils/HealthVaultABI.json");
+      console.log("Contract address loaded:", addressData.address);
       setContractAddress(addressData.address);
       setContractABI(abiData.default);
     } catch (error) {
-      console.warn("Contract not deployed yet. Please deploy first.");
+      console.error("Contract loading failed:", error);
       setError("Contract not deployed. Please run: npx hardhat run scripts/deploy.js --network sepolia");
     }
   };
@@ -45,6 +56,88 @@ function App() {
       }
     } catch (error) {
       console.error("Error checking wallet connection:", error);
+      setError("Failed to check wallet: " + error.message);
+    }
+  };
+
+  const checkNetwork = async () => {
+    try {
+      const chainId = await window.ethereum.request({ method: "eth_chainId" });
+      console.log("Current network chain ID:", chainId);
+      console.log("Expected Sepolia chain ID:", SEPOLIA_CHAIN_ID);
+      
+      // Convert both to lowercase for case-insensitive comparison
+      const currentChainId = chainId.toLowerCase();
+      const expectedChainId = SEPOLIA_CHAIN_ID.toLowerCase();
+      
+      // Also check decimal format (11155111)
+      const currentChainIdDecimal = parseInt(chainId, 16);
+      console.log("Chain ID in decimal:", currentChainIdDecimal);
+      
+      if (currentChainId !== expectedChainId) {
+        setError(`Wrong network detected. Please switch to Sepolia testnet in MetaMask.`);
+        return false;
+      }
+      
+      console.log("✓ Connected to Sepolia testnet");
+      return true;
+    } catch (error) {
+      console.error("Error checking network:", error);
+      setError("Failed to check network: " + error.message);
+      return false;
+    }
+  };
+
+  const switchToSepolia = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: SEPOLIA_CHAIN_ID }],
+      });
+      
+      console.log("✓ Switched to Sepolia");
+      setLoading(false);
+      
+      // After switching, try connecting
+      await connectWallet();
+    } catch (error) {
+      setLoading(false);
+      
+      // This error code indicates that the chain has not been added to MetaMask
+      if (error.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: SEPOLIA_CHAIN_ID,
+                chainName: "Sepolia Test Network",
+                nativeCurrency: {
+                  name: "SepoliaETH",
+                  symbol: "ETH",
+                  decimals: 18,
+                },
+                rpcUrls: ["https://sepolia.infura.io/v3/"],
+                blockExplorerUrls: ["https://sepolia.etherscan.io/"],
+              },
+            ],
+          });
+          
+          // After adding, try connecting
+          await connectWallet();
+        } catch (addError) {
+          console.error("Error adding Sepolia network:", addError);
+          setError("Failed to add Sepolia network: " + addError.message);
+        }
+      } else if (error.code === 4001) {
+        setError("Network switch rejected. Please switch to Sepolia manually in MetaMask.");
+      } else {
+        console.error("Error switching network:", error);
+        setError("Failed to switch network: " + error.message);
+      }
     }
   };
 
@@ -57,6 +150,14 @@ function App() {
 
       setLoading(true);
       setError("");
+      setIsInitialized(false);
+
+      // Check if we're on the correct network
+      const isCorrectNetwork = await checkNetwork();
+      if (!isCorrectNetwork) {
+        setLoading(false);
+        return;
+      }
 
       // Request account access
       const accounts = await window.ethereum.request({
@@ -64,20 +165,23 @@ function App() {
       });
 
       const account = accounts[0];
+      console.log("Connected account:", account);
       setAccount(account);
 
-      // Create provider and signer using ethers v6
-      const browserProvider = new ethers.BrowserProvider(window.ethereum);
-      setProvider(browserProvider);
-
+      // Ensure contract data is loaded
       if (!contractAddress || !contractABI) {
         setError("Contract not deployed. Please run deployment script first.");
         setLoading(false);
         return;
       }
 
+      // Create provider and signer using ethers v6
+      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      setProvider(browserProvider);
+
       // Get signer
       const signer = await browserProvider.getSigner();
+      console.log("Signer address:", await signer.getAddress());
 
       // Create contract instance
       const healthVaultContract = new ethers.Contract(
@@ -86,12 +190,20 @@ function App() {
         signer
       );
 
+      console.log("Contract instance created at:", contractAddress);
       setContract(healthVaultContract);
 
-      // Get user role
-      const role = await healthVaultContract.roles(account);
-      setUserRole(Number(role));
+      // Get user role from contract
+      try {
+        const role = await healthVaultContract.roles(account);
+        console.log("User role:", Number(role));
+        setUserRole(Number(role));
+      } catch (roleError) {
+        console.error("Error fetching role:", roleError);
+        setUserRole(0); // Default to no role
+      }
 
+      setIsInitialized(true);
       setLoading(false);
 
       // Listen for account changes
@@ -101,6 +213,7 @@ function App() {
           setAccount(null);
           setContract(null);
           setUserRole(0);
+          setIsInitialized(false);
         } else {
           // User switched accounts
           window.location.reload();
@@ -116,25 +229,63 @@ function App() {
       console.error("Error connecting wallet:", error);
       setError("Failed to connect wallet: " + error.message);
       setLoading(false);
+      setIsInitialized(false);
     }
   };
 
   const assignRole = async (roleType) => {
+    // Critical null guards
+    if (!contract) {
+      console.error("Contract not initialized");
+      setError("Contract not initialized. Please refresh and reconnect your wallet.");
+      return;
+    }
+
+    if (!account) {
+      console.error("No account connected");
+      setError("No wallet connected. Please connect your wallet first.");
+      return;
+    }
+
+    if (!isInitialized) {
+      console.error("System not initialized");
+      setError("System still initializing. Please wait a moment.");
+      return;
+    }
+
     try {
       setLoading(true);
       setError("");
 
+      console.log(`Assigning role ${roleType} to ${account}`);
+      
+      // Call the contract function with proper parameters
       const tx = await contract.assignRole(account, roleType);
+      console.log("Transaction sent:", tx.hash);
+      
       await tx.wait();
+      console.log("Transaction confirmed");
 
-      // Refresh role
+      // Refresh role from contract
       const role = await contract.roles(account);
-      setUserRole(Number(role));
+      const roleNumber = Number(role);
+      console.log("Role updated to:", roleNumber);
+      setUserRole(roleNumber);
 
       setLoading(false);
     } catch (error) {
       console.error("Error assigning role:", error);
-      setError("Failed to assign role: " + error.message);
+      let errorMessage = "Failed to assign role: ";
+      
+      if (error.code === "ACTION_REJECTED") {
+        errorMessage += "Transaction was rejected by user";
+      } else if (error.message) {
+        errorMessage += error.message;
+      } else {
+        errorMessage += "Unknown error occurred";
+      }
+      
+      setError(errorMessage);
       setLoading(false);
     }
   };
@@ -170,10 +321,20 @@ function App() {
           <button
             onClick={connectWallet}
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition mb-3"
           >
             {loading ? "Connecting..." : "Connect Wallet"}
           </button>
+
+          {error && error.includes("Wrong network") && (
+            <button
+              onClick={switchToSepolia}
+              disabled={loading}
+              className="w-full bg-orange-600 text-white py-3 px-6 rounded-lg hover:bg-orange-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              {loading ? "Switching..." : "Switch to Sepolia Network"}
+            </button>
+          )}
 
           <div className="mt-6 text-sm text-gray-500 text-center">
             <p>Make sure you have MetaMask installed</p>
@@ -200,11 +361,17 @@ function App() {
               </div>
             )}
 
+            {!isInitialized && (
+              <div className="mb-4 p-4 bg-yellow-100 text-yellow-700 rounded-lg">
+                Initializing contract... Please wait.
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <button
                 onClick={() => assignRole(1)}
-                disabled={loading}
-                className="p-6 bg-blue-100 hover:bg-blue-200 rounded-lg border-2 border-blue-300 transition disabled:opacity-50"
+                disabled={loading || !isInitialized || !contract}
+                className="p-6 bg-blue-100 hover:bg-blue-200 rounded-lg border-2 border-blue-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="text-4xl mb-2">🏥</div>
                 <div className="font-semibold text-lg">Patient</div>
@@ -215,8 +382,8 @@ function App() {
 
               <button
                 onClick={() => assignRole(2)}
-                disabled={loading}
-                className="p-6 bg-green-100 hover:bg-green-200 rounded-lg border-2 border-green-300 transition disabled:opacity-50"
+                disabled={loading || !isInitialized || !contract}
+                className="p-6 bg-green-100 hover:bg-green-200 rounded-lg border-2 border-green-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="text-4xl mb-2">👨‍⚕️</div>
                 <div className="font-semibold text-lg">Doctor</div>
@@ -227,8 +394,8 @@ function App() {
 
               <button
                 onClick={() => assignRole(3)}
-                disabled={loading}
-                className="p-6 bg-purple-100 hover:bg-purple-200 rounded-lg border-2 border-purple-300 transition disabled:opacity-50"
+                disabled={loading || !isInitialized || !contract}
+                className="p-6 bg-purple-100 hover:bg-purple-200 rounded-lg border-2 border-purple-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="text-4xl mb-2">🔬</div>
                 <div className="font-semibold text-lg">Diagnostics</div>
@@ -239,8 +406,8 @@ function App() {
 
               <button
                 onClick={() => assignRole(4)}
-                disabled={loading}
-                className="p-6 bg-yellow-100 hover:bg-yellow-200 rounded-lg border-2 border-yellow-300 transition disabled:opacity-50"
+                disabled={loading || !isInitialized || !contract}
+                className="p-6 bg-yellow-100 hover:bg-yellow-200 rounded-lg border-2 border-yellow-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="text-4xl mb-2">📊</div>
                 <div className="font-semibold text-lg">Researcher</div>
@@ -249,6 +416,12 @@ function App() {
                 </div>
               </button>
             </div>
+
+            {loading && (
+              <div className="mt-4 text-center text-gray-600">
+                Processing... Please confirm the transaction in MetaMask.
+              </div>
+            )}
           </div>
         </div>
       </div>
