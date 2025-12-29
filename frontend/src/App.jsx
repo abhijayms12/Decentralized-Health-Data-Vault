@@ -9,7 +9,7 @@ function App() {
   const [contractAddress, setContractAddress] = useState(null);
   const [contractABI, setContractABI] = useState(null);
   const [contract, setContract] = useState(null);
-  const [userRole, setUserRole] = useState(0); // 0: NONE, 1: PATIENT, 2: DOCTOR, 3: DIAGNOSTICS, 4: RESEARCHER
+  const [userRole, setUserRole] = useState(0); // 0: NONE, 1: PATIENT, 2: DOCTOR, 3: DIAGNOSTICS
   const [provider, setProvider] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -304,7 +304,6 @@ function App() {
       case 1: return "Patient";
       case 2: return "Doctor";
       case 3: return "Diagnostics";
-      case 4: return "Researcher";
       default: return "Unknown";
     }
   };
@@ -419,18 +418,6 @@ function App() {
                   Upload diagnostic reports for patients
                 </div>
               </button>
-
-              <button
-                onClick={() => assignRole(4)}
-                disabled={loading || !isInitialized || !contract}
-                className="p-6 bg-yellow-100 hover:bg-yellow-200 rounded-lg border-2 border-yellow-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div className="text-4xl mb-2">📊</div>
-                <div className="font-semibold text-lg">Researcher</div>
-                <div className="text-sm text-gray-600 mt-2">
-                  Access anonymized metadata only
-                </div>
-              </button>
             </div>
 
             {loading && (
@@ -477,12 +464,6 @@ function App() {
         {userRole === 1 && <PatientDashboard contract={contract} account={account} />}
         {userRole === 2 && <DoctorDashboard contract={contract} account={account} />}
         {userRole === 3 && <DiagnosticsDashboard contract={contract} account={account} />}
-        {userRole === 4 && (
-          <div className="text-center py-12">
-            <h2 className="text-2xl font-bold mb-4">Researcher Dashboard</h2>
-            <p className="text-gray-600">Coming soon - Anonymized metadata access</p>
-          </div>
-        )}
       </main>
     </div>
   );
