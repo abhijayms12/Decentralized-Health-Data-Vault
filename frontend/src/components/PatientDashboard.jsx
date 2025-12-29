@@ -373,6 +373,94 @@ export default function PatientDashboard({ contract, account }) {
     }
   };
 
+  // Revoke doctor access
+  const handleRevokeAccess = async () => {
+    if (!doctorAddress) {
+      showMessage("error", "Please enter doctor's address to revoke");
+      return;
+    }
+
+    // Validate Ethereum address
+    if (!ethers.isAddress(doctorAddress)) {
+      showMessage("error", "Invalid Ethereum address");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      showMessage("info", "Revoking doctor access...");
+
+      const tx = await contract.revokeDoctorAccess(doctorAddress);
+      console.log("Transaction sent:", tx.hash);
+      
+      await tx.wait();
+      console.log("Access revoked");
+
+      showMessage("success", `✓ Access revoked from ${doctorAddress.substring(0, 10)}...`);
+      setDoctorAddress("");
+
+    } catch (error) {
+      console.error("Revoke access failed:", error);
+      
+      let errorMsg = "Failed to revoke access: ";
+      if (error.message.includes("ACTION_REJECTED")) {
+        errorMsg += "Transaction rejected";
+      } else if (error.code === "CALL_EXCEPTION") {
+        errorMsg += "Transaction failed. Please check the address.";
+      } else {
+        errorMsg += error.message;
+      }
+      
+      showMessage("error", errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Revoke diagnostics access
+  const handleRevokeDiagnosticsAccess = async () => {
+    if (!diagnosticsAddress) {
+      showMessage("error", "Please enter diagnostics lab address to revoke");
+      return;
+    }
+
+    // Validate Ethereum address
+    if (!ethers.isAddress(diagnosticsAddress)) {
+      showMessage("error", "Invalid Ethereum address");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      showMessage("info", "Revoking diagnostics access...");
+
+      const tx = await contract.revokeDiagnosticsAccess(diagnosticsAddress);
+      console.log("Transaction sent:", tx.hash);
+      
+      await tx.wait();
+      console.log("Diagnostics access revoked");
+
+      showMessage("success", `✓ Diagnostics access revoked from ${diagnosticsAddress.substring(0, 10)}...`);
+      setDiagnosticsAddress("");
+
+    } catch (error) {
+      console.error("Revoke diagnostics access failed:", error);
+      
+      let errorMsg = "Failed to revoke diagnostics access: ";
+      if (error.message.includes("ACTION_REJECTED")) {
+        errorMsg += "Transaction rejected";
+      } else if (error.code === "CALL_EXCEPTION") {
+        errorMsg += "Transaction failed. Please check the address.";
+      } else {
+        errorMsg += error.message;
+      }
+      
+      showMessage("error", errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Helper: Read file as ArrayBuffer
   const readFileAsArrayBuffer = (file) => {
     return new Promise((resolve, reject) => {
@@ -699,9 +787,9 @@ export default function PatientDashboard({ contract, account }) {
         </div>
       </div>
 
-      {/* Grant Access Section - Side by Side */}
+      {/* Grant/Revoke Access Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Grant Doctor Access */}
+        {/* Doctor Access Management */}
         <div className="floating-panel p-6">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 bg-[#F0FDFA] rounded-xl flex items-center justify-center">
@@ -710,12 +798,13 @@ export default function PatientDashboard({ contract, account }) {
               </svg>
             </div>
             <div>
-              <h2 className="text-lg font-bold text-[#0F172A]">Grant Doctor Access</h2>
-              <p className="text-sm text-[#475569]">Allow viewing your records</p>
+              <h2 className="text-lg font-bold text-[#0F172A]">Grant/Revoke Doctor Access</h2>
+              <p className="text-sm text-[#475569]">Manage doctor viewing permissions</p>
             </div>
           </div>
 
           <div className="space-y-4">
+            {/* Common Address Input */}
             <input
               type="text"
               placeholder="Doctor's wallet address (0x...)"
@@ -727,23 +816,43 @@ export default function PatientDashboard({ contract, account }) {
                 placeholder-gray-400 text-[#0F172A] transition-all duration-200 disabled:opacity-50"
               style={{background: 'rgba(255, 255, 255, 0.5)', border: '1px solid rgba(20, 184, 166, 0.15)'}}
             />
-            <button
-              onClick={handleGrantAccess}
-              disabled={loading || !doctorAddress}
-              className="w-full bg-[#14B8A6] text-white px-4 py-3 rounded-xl hover:bg-[#0D9488] 
-                disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200
-                focus:outline-none focus:ring-2 focus:ring-[#14B8A6] focus:ring-offset-2 hover-glow"
-            >
-              {loading ? "Granting..." : "Grant Access"}
-            </button>
-            
-            <div className="bg-[#F0FDFA] border border-[#99F6E4] rounded-xl p-4">
-              <p className="text-xs text-[#0D9488] font-medium">Doctor must have the Doctor role assigned first</p>
+
+            {/* Grant and Revoke Buttons Side by Side */}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={handleGrantAccess}
+                disabled={loading || !doctorAddress}
+                className="bg-[#14B8A6] text-white px-4 py-3 rounded-xl hover:bg-[#0D9488] 
+                  disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200
+                  focus:outline-none focus:ring-2 focus:ring-[#14B8A6] focus:ring-offset-2 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                {loading ? "..." : "Grant"}
+              </button>
+
+              <button
+                onClick={handleRevokeAccess}
+                disabled={loading || !doctorAddress}
+                className="bg-[#EF4444] text-white px-4 py-3 rounded-xl hover:bg-[#DC2626] 
+                  disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200
+                  focus:outline-none focus:ring-2 focus:ring-[#EF4444] focus:ring-offset-2 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+                {loading ? "..." : "Revoke"}
+              </button>
             </div>
+          </div>
+
+          <div className="bg-[#F0FDFA] border border-[#99F6E4] rounded-xl p-3 mt-4">
+            <p className="text-xs text-[#0D9488] font-medium">Doctor must have the Doctor role assigned first</p>
           </div>
         </div>
 
-        {/* Grant Diagnostics Access */}
+        {/* Diagnostics Access Management */}
         <div className="floating-panel p-6">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 bg-[#F5F3FF] rounded-xl flex items-center justify-center">
@@ -752,35 +861,57 @@ export default function PatientDashboard({ contract, account }) {
               </svg>
             </div>
             <div>
-              <h2 className="text-lg font-bold text-[#0F172A]">Grant Diagnostics Access</h2>
-              <p className="text-sm text-[#475569]">Allow uploading reports</p>
+              <h2 className="text-lg font-bold text-[#0F172A]">Grant/Revoke Diagnostics Access</h2>
+              <p className="text-sm text-[#475569]">Manage lab upload permissions</p>
             </div>
           </div>
 
           <div className="space-y-4">
+            {/* Common Address Input */}
             <input
               type="text"
               placeholder="Lab's wallet address (0x...)"
               value={diagnosticsAddress}
               onChange={(e) => setDiagnosticsAddress(e.target.value)}
               disabled={loading}
-              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl 
+              className="w-full px-4 py-3 rounded-xl 
                 focus:outline-none focus:ring-2 focus:ring-[#8B5CF6] focus:border-transparent
                 placeholder-gray-400 text-[#0F172A] transition-all duration-200 disabled:opacity-50"
+              style={{background: 'rgba(255, 255, 255, 0.5)', border: '1px solid rgba(139, 92, 246, 0.15)'}}
             />
-            <button
-              onClick={handleGrantDiagnosticsAccess}
-              disabled={loading || !diagnosticsAddress}
-              className="w-full bg-[#8B5CF6] text-white px-4 py-3 rounded-xl hover:bg-[#7C3AED] 
-                disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200
-                focus:outline-none focus:ring-2 focus:ring-[#8B5CF6] focus:ring-offset-2 hover-glow-indigo"
-            >
-              {loading ? "Granting..." : "Grant Access"}
-            </button>
-            
-            <div className="bg-[#F5F3FF] border border-[#DDD6FE] rounded-xl p-4">
-              <p className="text-xs text-[#7C3AED] font-medium">Lab must have the Diagnostics role assigned first</p>
+
+            {/* Grant and Revoke Buttons Side by Side */}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={handleGrantDiagnosticsAccess}
+                disabled={loading || !diagnosticsAddress}
+                className="bg-[#8B5CF6] text-white px-4 py-3 rounded-xl hover:bg-[#7C3AED] 
+                  disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200
+                  focus:outline-none focus:ring-2 focus:ring-[#8B5CF6] focus:ring-offset-2 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                {loading ? "..." : "Grant"}
+              </button>
+
+              <button
+                onClick={handleRevokeDiagnosticsAccess}
+                disabled={loading || !diagnosticsAddress}
+                className="bg-[#EF4444] text-white px-4 py-3 rounded-xl hover:bg-[#DC2626] 
+                  disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200
+                  focus:outline-none focus:ring-2 focus:ring-[#EF4444] focus:ring-offset-2 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+                {loading ? "..." : "Revoke"}
+              </button>
             </div>
+          </div>
+
+          <div className="bg-[#F5F3FF] border border-[#DDD6FE] rounded-xl p-3 mt-4">
+            <p className="text-xs text-[#7C3AED] font-medium">Lab must have the Diagnostics role assigned first</p>
           </div>
         </div>
       </div>
