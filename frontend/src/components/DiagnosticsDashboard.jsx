@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { encryptFileShared, isEncryptionConfigured } from "../utils/sharedEncryption";
 import { uploadToIPFS } from "../utils/ipfs";
@@ -10,6 +10,11 @@ export default function DiagnosticsDashboard({ contract, account }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [encryptionKey, setEncryptionKey] = useState(null);
 
+  // Check encryption key on mount
+  useEffect(() => {
+    checkEncryptionKey();
+  }, []);
+
   // Check if encryption key is configured
   const checkEncryptionKey = () => {
     const isConfigured = isEncryptionConfigured();
@@ -17,6 +22,9 @@ export default function DiagnosticsDashboard({ contract, account }) {
     
     if (!isConfigured) {
       showMessage("⚠️ Encryption key not configured. Please add VITE_ENCRYPTION_KEY to your .env file");
+    } else {
+      // Clear any existing error messages when key is configured
+      setMessage("");
     }
   };
 
