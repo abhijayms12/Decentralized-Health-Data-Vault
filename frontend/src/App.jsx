@@ -406,11 +406,13 @@ function App() {
                   Access patient records with permission
                 </div>
               </button>
+            </div>
 
+            <div className="flex justify-center mt-4">
               <button
                 onClick={() => assignRole(3)}
                 disabled={loading || !isInitialized || !contract}
-                className="p-6 bg-purple-100 hover:bg-purple-200 rounded-lg border-2 border-purple-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-6 bg-purple-100 hover:bg-purple-200 rounded-lg border-2 border-purple-300 transition disabled:opacity-50 disabled:cursor-not-allowed w-full max-w-xs"
               >
                 <div className="text-4xl mb-2">🔬</div>
                 <div className="font-semibold text-lg">Diagnostics</div>

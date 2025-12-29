@@ -7,6 +7,7 @@ export default function PatientDashboard({ contract, account }) {
   const [records, setRecords] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [doctorAddress, setDoctorAddress] = useState("");
+  const [diagnosticsAddress, setDiagnosticsAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
   const [encryptionKey, setEncryptionKey] = useState(null);
@@ -247,6 +248,68 @@ export default function PatientDashboard({ contract, account }) {
     }
   };
 
+  // Grant diagnostics access
+  const handleGrantDiagnosticsAccess = async () => {
+    if (!diagnosticsAddress) {
+      showMessage("error", "Please enter diagnostics lab address");
+      return;
+    }
+
+    // Validate Ethereum address
+    if (!ethers.isAddress(diagnosticsAddress)) {
+      showMessage("error", "Invalid Ethereum address");
+      return;
+    }
+
+    // Prevent granting access to self
+    if (diagnosticsAddress.toLowerCase() === account.toLowerCase()) {
+      showMessage("error", "Cannot grant access to your own address. Enter a different diagnostics lab's wallet address.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      showMessage("info", "Checking diagnostics lab role...");
+
+      // Check if address is registered as diagnostics
+      const diagnosticsRole = await contract.getRole(diagnosticsAddress);
+      if (Number(diagnosticsRole) !== 3) { // 3 = DIAGNOSTICS role
+        showMessage("error", `This address is not registered as a Diagnostics lab. They need to connect their wallet and select the Diagnostics role first.`);
+        setLoading(false);
+        return;
+      }
+
+      showMessage("info", "Granting diagnostics access...");
+
+      const tx = await contract.grantDiagnosticsAccess(diagnosticsAddress);
+      console.log("Transaction sent:", tx.hash);
+      
+      await tx.wait();
+      console.log("Diagnostics access granted");
+
+      showMessage("success", `✓ Diagnostics access granted to ${diagnosticsAddress.substring(0, 10)}...`);
+      setDiagnosticsAddress("");
+
+    } catch (error) {
+      console.error("Grant diagnostics access failed:", error);
+      
+      let errorMsg = "Failed to grant diagnostics access: ";
+      if (error.message.includes("Address is not a diagnostics")) {
+        errorMsg += "This address is not registered as a Diagnostics lab. They must select the Diagnostics role first.";
+      } else if (error.message.includes("ACTION_REJECTED")) {
+        errorMsg += "Transaction rejected";
+      } else if (error.code === "CALL_EXCEPTION") {
+        errorMsg += "Transaction would fail. Make sure the address is registered as a Diagnostics lab.";
+      } else {
+        errorMsg += error.message;
+      }
+      
+      showMessage("error", errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Helper: Read file as ArrayBuffer
   const readFileAsArrayBuffer = (file) => {
     return new Promise((resolve, reject) => {
@@ -410,6 +473,44 @@ export default function PatientDashboard({ contract, account }) {
             <li>The doctor must first connect their wallet and select the <strong>Doctor</strong> role</li>
             <li>Enter their wallet address (not your own)</li>
             <li>Once granted, they can view and download your encrypted health records</li>
+          </ul>
+        </div>
+      </div>
+
+      {/* Grant Diagnostics Access Section */}
+      <div className="bg-white shadow rounded-lg p-6">
+        <h2 className="text-xl font-semibold mb-4">Grant Diagnostics Lab Access</h2>
+        <p className="text-gray-600 mb-4">
+          Allow a diagnostics lab to upload diagnostic reports to your vault
+        </p>
+
+        <div className="flex gap-2 mb-3">
+          <input
+            type="text"
+            placeholder="Diagnostics Lab's Ethereum address (0x...)"
+            value={diagnosticsAddress}
+            onChange={(e) => setDiagnosticsAddress(e.target.value)}
+            disabled={loading}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 
+              focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+          />
+          <button
+            onClick={handleGrantDiagnosticsAccess}
+            disabled={loading || !diagnosticsAddress}
+            className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 
+              disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition"
+          >
+            {loading ? "Granting..." : "Grant Access"}
+          </button>
+        </div>
+        
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+          <p className="font-semibold mb-1">⚠️ Important:</p>
+          <ul className="list-disc list-inside space-y-1">
+            <li>The diagnostics lab must first connect their wallet and select the <strong>Diagnostics</strong> role</li>
+            <li>Enter their wallet address (not your own)</li>
+            <li>Once granted, they can upload diagnostic reports which will appear in your health records</li>
+            <li>You cannot view CIDs directly, but the reports will be accessible through your records</li>
           </ul>
         </div>
       </div>
