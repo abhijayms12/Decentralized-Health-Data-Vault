@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import { decryptFile } from "../utils/decrypt.js";
-import { retrieveKey } from "../utils/encryption.js";
+import { decryptFileShared, isEncryptionConfigured } from "../utils/sharedEncryption";
 import { downloadFromIPFS } from "../utils/ipfs.js";
 
 // TODO: Build a UI that:
@@ -19,21 +18,14 @@ export default function DoctorDashboard({ contract, account }) {
   const [message, setMessage] = useState("");
   const [encryptionKey, setEncryptionKey] = useState(null);
 
-  // FIXED: Initialize encryption key with error handling
+  // Check if shared encryption key is configured
   useEffect(() => {
-    const initKey = async () => {
-      try {
-        const key = await retrieveKey();
-        if (key) {
-          setEncryptionKey(key);
-        } else {
-          console.warn("No encryption key found - files cannot be decrypted");
-        }
-      } catch (error) {
-        console.error("Failed to retrieve encryption key:", error);
-      }
-    };
-    initKey();
+    const isConfigured = isEncryptionConfigured();
+    setEncryptionKey(isConfigured ? true : null);
+    
+    if (!isConfigured) {
+      setMessage("⚠️ Encryption key not configured. Please add VITE_ENCRYPTION_KEY to your .env file");
+    }
   }, []);
 
   const handleFetchRecords = async (e) => {
@@ -73,7 +65,7 @@ export default function DoctorDashboard({ contract, account }) {
 
   const handleViewFile = async (cid, index) => {
     if (!encryptionKey) {
-      setMessage("Encryption key not available. Please reconnect your wallet and upload a file first.");
+      setMessage("⚠️ Encryption key not configured. Please add VITE_ENCRYPTION_KEY to your .env file");
       return;
     }
 
@@ -86,8 +78,8 @@ export default function DoctorDashboard({ contract, account }) {
       
       setMessage("Decrypting file...");
       
-      // FIXED: Decrypt using Web Crypto API
-      const blob = await decryptFile(encryptedData, encryptionKey);
+      // Decrypt using shared key
+      const blob = decryptFileShared(encryptedData);
       const url = window.URL.createObjectURL(blob);
       
       setMessage("File decrypted successfully");
@@ -114,7 +106,7 @@ export default function DoctorDashboard({ contract, account }) {
 
   const handleDownloadFile = async (cid, index) => {
     if (!encryptionKey) {
-      setMessage("Encryption key not available. Please reconnect your wallet and upload a file first.");
+      setMessage("⚠️ Encryption key not configured. Please add VITE_ENCRYPTION_KEY to your .env file");
       return;
     }
 
@@ -127,8 +119,8 @@ export default function DoctorDashboard({ contract, account }) {
       
       setMessage("Decrypting file...");
       
-      // FIXED: Decrypt using Web Crypto API
-      const blob = await decryptFile(encryptedData, encryptionKey);
+      // Decrypt using shared key
+      const blob = decryptFileShared(encryptedData);
       
       // Trigger download
       const url = window.URL.createObjectURL(blob);

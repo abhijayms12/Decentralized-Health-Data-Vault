@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import { deriveEncryptionKey, encryptFile, decryptFile, storeKey, retrieveKey } from "../utils/encryption";
+import { encryptFileShared, decryptFileShared, isEncryptionConfigured } from "../utils/sharedEncryption";
 import { uploadToIPFS, downloadFromIPFS, getIPFSGatewayURL } from "../utils/ipfs";
 
 export default function PatientDashboard({ contract, account }) {
@@ -13,35 +13,21 @@ export default function PatientDashboard({ contract, account }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState("");
 
-  // Load patient records and encryption key on mount
+  // Load patient records on mount
   useEffect(() => {
     if (contract && account) {
       loadRecords();
-      initializeEncryptionKey();
+      checkEncryptionKey();
     }
   }, [contract, account]);
 
-  // Initialize encryption key from wallet signature
-  const initializeEncryptionKey = async () => {
-    try {
-      // Check if key exists in session
-      let key = await retrieveKey();
-      
-      if (!key) {
-        // Derive new key from wallet signature
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        
-        showMessage("info", "Please sign message to derive encryption key...");
-        key = await deriveEncryptionKey(signer);
-        await storeKey(key);
-        showMessage("success", "Encryption key initialized");
-      }
-      
-      setEncryptionKey(key);
-    } catch (error) {
-      console.error("Failed to initialize encryption key:", error);
-      showMessage("error", "Failed to initialize encryption: " + error.message);
+  // Check if shared encryption key is configured
+  const checkEncryptionKey = () => {
+    const isConfigured = isEncryptionConfigured();
+    setEncryptionKey(isConfigured ? true : null);
+    
+    if (!isConfigured) {
+      showMessage("error", "⚠️ Encryption key not configured. Please add VITE_ENCRYPTION_KEY to your .env file");
     }
   };
 
@@ -121,10 +107,10 @@ export default function PatientDashboard({ contract, account }) {
       const fileData = await readFileAsArrayBuffer(selectedFile);
       console.log("✓ File read:", fileData.byteLength, "bytes");
 
-      // 2. Encrypt the file
+      // 2. Encrypt the file using shared key
       setUploadProgress("Encrypting file...");
-      const { encryptedData } = await encryptFile(fileData, encryptionKey);
-      console.log("✓ File encrypted:", encryptedData.length, "bytes");
+      const encryptedData = encryptFileShared(fileData);
+      console.log("✓ File encrypted");
 
       // 3. Upload to IPFS via Lighthouse
       setUploadProgress("Uploading to Lighthouse IPFS...");
@@ -163,8 +149,7 @@ export default function PatientDashboard({ contract, account }) {
   // Download and decrypt a record
   const handleDownloadRecord = async (record) => {
     if (!encryptionKey) {
-      showMessage("error", "Encryption key not available. Please sign the message again.");
-      await initializeEncryptionKey();
+      showMessage("error", "Encryption key not configured. Please add VITE_ENCRYPTION_KEY to your .env file");
       return;
     }
 
@@ -173,16 +158,15 @@ export default function PatientDashboard({ contract, account }) {
 
       // 1. Download from IPFS (may take 10-30 seconds for first download)
       const encryptedData = await downloadFromIPFS(record.cid);
-      console.log("✓ Downloaded from IPFS:", encryptedData.length, "bytes");
+      console.log("✓ Downloaded from IPFS");
 
       showMessage("info", "Decrypting file...");
 
-      // 2. Decrypt the file
-      const decryptedData = await decryptFile(encryptedData, encryptionKey);
-      console.log("✓ File decrypted:", decryptedData.byteLength, "bytes");
+      // 2. Decrypt the file using shared key
+      const blob = decryptFileShared(encryptedData);
+      console.log("✓ File decrypted");
 
-      // 3. Create blob and download
-      const blob = new Blob([decryptedData], { type: "application/pdf" });
+      // 3. Create download link
       const url = URL.createObjectURL(blob);
       
       const a = document.createElement("a");
@@ -335,14 +319,11 @@ export default function PatientDashboard({ contract, account }) {
         {!encryptionKey && (
           <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
             <p className="text-sm text-yellow-800 mb-2">
-              🔐 Encryption key not initialized. Please sign a message to enable file uploads.
+              🔐 Encryption key not configured. Please add VITE_ENCRYPTION_KEY to your .env file and restart the dev server.
             </p>
-            <button
-              onClick={initializeEncryptionKey}
-              className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm font-medium"
-            >
-              Initialize Encryption Key
-            </button>
+            <p className="text-xs text-yellow-700">
+              Ask the project owner for the shared encryption key value.
+            </p>
           </div>
         )}
 

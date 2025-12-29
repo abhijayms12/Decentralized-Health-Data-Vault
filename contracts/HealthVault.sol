@@ -49,29 +49,37 @@ contract HealthVault {
     }
     
     constructor() {
-        // Contract deployer gets patient role by default (can be changed)
+        // Contract deployer can assign roles initially
         roles[msg.sender] = Role.PATIENT;
         emit RoleAssigned(msg.sender, Role.PATIENT);
     }
     
     /**
      * @dev Assign a role to an address
-     * @param _user Address to assign role to
-     * @param _role Role to assign
+     * Users can self-assign roles (wallet = identity)
+     * @param _role Role to assign to caller
      */
-    function assignRole(address _user, Role _role) external {
-        require(_user != address(0), "Invalid address");
-        roles[_user] = _role;
-        emit RoleAssigned(_user, _role);
+    function assignRole(Role _role) external {
+        require(_role != Role.NONE, "Cannot assign NONE role");
+        roles[msg.sender] = _role;
+        emit RoleAssigned(msg.sender, _role);
     }
     
     /**
-     * @dev Add a health record (CID only)
+     * @dev Get the role of any address
+     * @param _user Address to check
+     * @return Role of the user
+     */
+    function getRole(address _user) external view returns (Role) {
+        return roles[_user];
+    }
+    
+    /**
+     * @dev Patient adds their own health record (CID only)
      * @param _cid IPFS CID of the encrypted health document
      */
-    function addRecord(string memory _cid) external {
+    function addPatientRecord(string memory _cid) external onlyRole(Role.PATIENT) {
         require(bytes(_cid).length > 0, "CID cannot be empty");
-        require(roles[msg.sender] == Role.PATIENT, "Only patients can add their own records");
         
         Record memory newRecord = Record({
             cid: _cid,
@@ -84,14 +92,36 @@ contract HealthVault {
     }
     
     /**
-     * @dev Diagnostics lab adds a record for a patient
+     * @dev Doctor adds a record for a patient (requires patient consent)
      * @param _patient Patient address
-     * @param _cid IPFS CID of the diagnostic report
+     * @param _cid IPFS CID of the medical document (prescription, diagnosis, treatment notes)
+     */
+    function addDoctorRecord(address _patient, string memory _cid) external onlyRole(Role.DOCTOR) {
+        require(bytes(_cid).length > 0, "CID cannot be empty");
+        require(_patient != address(0), "Invalid patient address");
+        require(roles[_patient] == Role.PATIENT, "Target address is not a patient");
+        require(doctorAccess[_patient][msg.sender], "Patient has not granted access");
+        
+        Record memory newRecord = Record({
+            cid: _cid,
+            timestamp: block.timestamp,
+            uploader: msg.sender
+        });
+        
+        patientRecords[_patient].push(newRecord);
+        emit RecordAdded(_patient, _cid, block.timestamp, msg.sender);
+    }
+    
+    /**
+     * @dev Diagnostics lab adds a record for a patient (UPLOAD-ONLY, NO READ ACCESS)
+     * @param _patient Patient address
+     * @param _cid IPFS CID of the diagnostic report (lab results, test results)
      */
     function addDiagnosticRecord(address _patient, string memory _cid) external onlyRole(Role.DIAGNOSTICS) {
         require(bytes(_cid).length > 0, "CID cannot be empty");
         require(_patient != address(0), "Invalid patient address");
-        require(diagnosticsAccess[_patient][msg.sender], "No permission to add records for this patient");
+        require(roles[_patient] == Role.PATIENT, "Target address is not a patient");
+        require(diagnosticsAccess[_patient][msg.sender], "Patient has not granted access");
         
         Record memory newRecord = Record({
             cid: _cid,
@@ -151,14 +181,16 @@ contract HealthVault {
     
     /**
      * @dev Get all records for a patient (only if authorized)
+     * DIAGNOSTICS ROLE CANNOT ACCESS THIS FUNCTION
      * @param _patient Patient's address
      * @return Array of records
      */
     function getRecords(address _patient) external view returns (Record[] memory) {
         require(_patient != address(0), "Invalid patient address");
+        require(roles[msg.sender] != Role.DIAGNOSTICS, "Diagnostics role has no read access");
         
         // Patient can view own records
-        if (msg.sender == _patient) {
+        if (msg.sender == _patient && roles[msg.sender] == Role.PATIENT) {
             return patientRecords[_patient];
         }
         
@@ -172,15 +204,17 @@ contract HealthVault {
     
     /**
      * @dev Get the most recent record for a patient
+     * DIAGNOSTICS ROLE CANNOT ACCESS THIS FUNCTION
      * @param _patient Patient's address
      * @return Most recent record
      */
     function getMostRecentRecord(address _patient) external view returns (Record memory) {
         require(_patient != address(0), "Invalid patient address");
+        require(roles[msg.sender] != Role.DIAGNOSTICS, "Diagnostics role has no read access");
         
         // Authorization check
         require(
-            msg.sender == _patient || 
+            (msg.sender == _patient && roles[msg.sender] == Role.PATIENT) || 
             (roles[msg.sender] == Role.DOCTOR && doctorAccess[_patient][msg.sender]),
             "Not authorized to view records"
         );
@@ -193,15 +227,17 @@ contract HealthVault {
     
     /**
      * @dev Get record count for a patient (accessible by patient or authorized doctor)
+     * DIAGNOSTICS ROLE CANNOT ACCESS THIS FUNCTION
      * @param _patient Patient's address
      * @return Number of records
      */
     function getRecordCount(address _patient) external view returns (uint256) {
         require(_patient != address(0), "Invalid patient address");
+        require(roles[msg.sender] != Role.DIAGNOSTICS, "Diagnostics role has no read access");
         
         // Authorization check
         require(
-            msg.sender == _patient || 
+            (msg.sender == _patient && roles[msg.sender] == Role.PATIENT) || 
             (roles[msg.sender] == Role.DOCTOR && doctorAccess[_patient][msg.sender]),
             "Not authorized to view record count"
         );
