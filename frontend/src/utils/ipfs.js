@@ -6,12 +6,15 @@
 
 /**
  * Upload encrypted file to IPFS using Lighthouse
- * @param {Uint8Array} encryptedData - Encrypted file data
+ * @param {string} encryptedData - Encrypted file data (CryptoJS encrypted string)
  * @param {string} originalFilename - Original filename
  * @returns {Promise<string>} - IPFS CID
  */
 export async function uploadToIPFS(encryptedData, originalFilename = "encrypted-file") {
   const apiKey = import.meta.env.VITE_LIGHTHOUSE_API_KEY;
+  
+  console.log("📤 Upload - Encrypted data type:", typeof encryptedData);
+  console.log("📤 Upload - Encrypted data length:", encryptedData?.length);
   
   if (!apiKey) {
     console.warn("⚠️  Lighthouse API key not found - using mock IPFS");
@@ -22,32 +25,54 @@ export async function uploadToIPFS(encryptedData, originalFilename = "encrypted-
     console.log("📤 Uploading to Lighthouse IPFS...");
     console.log("   File:", originalFilename + ".enc");
     console.log("   Size:", encryptedData.length, "bytes");
+    console.log("   API Key (first 10 chars):", apiKey.substring(0, 10));
     
     // Create FormData with the file
     const formData = new FormData();
-    const blob = new Blob([encryptedData], { type: "application/octet-stream" });
+    const blob = new Blob([encryptedData], { type: "text/plain" });
     const file = new File([blob], originalFilename + ".enc", {
-      type: "application/octet-stream"
+      type: "text/plain"
     });
     formData.append("file", file);
 
-    // Upload to Lighthouse
-    const response = await fetch("https://node.lighthouse.storage/api/v0/add", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`
-      },
-      body: formData
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("❌ Lighthouse upload failed:", response.status, errorText);
-      console.warn("Falling back to mock IPFS");
-      return generateMockCID(encryptedData);
+    // Upload to Lighthouse using Files API (try multiple endpoints)
+    const endpoints = [
+      "https://upload.lighthouse.storage/api/v0/add",
+      "https://api.lighthouse.storage/api/v0/add"
+    ];
+    
+    let response;
+    let lastError;
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`   Trying endpoint: ${endpoint}`);
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Accept": "application/json"
+          },
+          body: formData
+        });
+        
+        if (response.ok) {
+          console.log(`   ✅ Connected to ${endpoint}`);
+          break;
+        }
+      } catch (err) {
+        console.warn(`   ❌ ${endpoint} failed:`, err.message);
+        lastError = err;
+        continue;
+      }
+    }
+    
+    if (!response || !response.ok) {
+      throw lastError || new Error("All Lighthouse endpoints failed");
     }
 
     const data = await response.json();
+    console.log("📦 Lighthouse response:", data);
     const cid = data.Hash || data.cid || data.IpfsHash;
     
     if (!cid) {
@@ -69,7 +94,7 @@ export async function uploadToIPFS(encryptedData, originalFilename = "encrypted-
 
 /**
  * Generate a mock CID for development
- * @param {Uint8Array} data - File data
+ * @param {string} data - Encrypted file data (CryptoJS string)
  * @returns {string} - Mock CID
  * 
  * ⚠️ WARNING: Mock IPFS stores files in browser sessionStorage
@@ -79,9 +104,15 @@ export async function uploadToIPFS(encryptedData, originalFilename = "encrypted-
  * - TODO: Replace with backend API endpoint (see .github/copilot-instructions.md)
  */
 function generateMockCID(data) {
-  const hash = Array.from(data.slice(0, 16))
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
+  console.log("📦 Mock storage - Data type:", typeof data);
+  
+  // Generate hash from first chars of the encrypted string
+  const hashSource = typeof data === 'string' ? data : String(data);
+  const hash = hashSource.slice(0, 16)
+    .split('')
+    .map(c => c.charCodeAt(0).toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 32);
   
   const mockCID = `Qm${hash}${Date.now().toString(36)}mock`;
   
@@ -90,11 +121,8 @@ function generateMockCID(data) {
   console.warn("   Storage: Browser sessionStorage (temporary)");
   console.warn("   Action: Set up Express backend for persistent storage");
   
-  let binary = '';
-  for (let i = 0; i < data.length; i++) {
-    binary += String.fromCharCode(data[i]);
-  }
-  sessionStorage.setItem(`ipfs-mock-${mockCID}`, btoa(binary));
+  // Store the encrypted string directly (it's already text from CryptoJS)
+  sessionStorage.setItem(`ipfs-mock-${mockCID}`, data);
   
   return mockCID;
 }
@@ -102,7 +130,7 @@ function generateMockCID(data) {
 /**
  * Download file from IPFS
  * @param {string} cid - IPFS CID
- * @returns {Promise<Uint8Array>} - File data
+ * @returns {Promise<Uint8Array|string>} - File data (Uint8Array from real IPFS, string from mock storage)
  */
 export async function downloadFromIPFS(cid) {
   try {
@@ -117,15 +145,9 @@ export async function downloadFromIPFS(cid) {
         throw new Error("Mock file not found in session storage. Files are lost when browser restarts. Use real IPFS (Lighthouse with backend) for persistent storage.");
       }
       
-      // Decode from base64
-      const binaryString = atob(stored);
-      const data = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        data[i] = binaryString.charCodeAt(i);
-      }
-      
-      console.log("✅ Retrieved from mock storage:", data.length, "bytes");
-      return data;
+      console.log("📦 Retrieved from mock storage - Data type:", typeof stored, "Length:", stored.length);
+      // Return the string directly (no base64 decoding needed anymore)
+      return stored;
     }
     
     // Try multiple IPFS gateways
