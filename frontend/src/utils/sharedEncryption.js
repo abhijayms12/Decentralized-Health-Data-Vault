@@ -8,6 +8,8 @@ import CryptoJS from 'crypto-js';
 // Get shared encryption key from environment variable
 const SHARED_ENCRYPTION_KEY = import.meta.env.VITE_ENCRYPTION_KEY;
 
+console.log('🔑 Encryption key loaded:', SHARED_ENCRYPTION_KEY ? `${SHARED_ENCRYPTION_KEY.substring(0, 10)}...` : 'NOT FOUND');
+
 if (!SHARED_ENCRYPTION_KEY) {
   console.warn('⚠️ VITE_ENCRYPTION_KEY not set in .env - encryption/decryption will fail');
 }
@@ -40,18 +42,37 @@ export function encryptFileShared(fileData) {
 
 /**
  * Decrypt file data using shared AES key
- * @param {string} encryptedData - Base64 encoded encrypted data
+ * @param {string|Uint8Array} encryptedData - Encrypted data (string or Uint8Array from IPFS)
  * @returns {Blob} - Decrypted file as Blob
  */
 export function decryptFileShared(encryptedData) {
   try {
+    console.log('🔓 Starting decryption...');
+    console.log('📦 Encrypted data type:', typeof encryptedData);
+    console.log('📦 Encrypted data length:', encryptedData?.length || 'N/A');
+    console.log('🔑 Key available:', !!SHARED_ENCRYPTION_KEY);
+    
     if (!SHARED_ENCRYPTION_KEY) {
       throw new Error('Encryption key not configured. Please add VITE_ENCRYPTION_KEY to your .env file');
     }
 
+    // Convert Uint8Array to string if needed (from IPFS download)
+    let encryptedString;
+    if (encryptedData instanceof Uint8Array) {
+      console.log('🔄 Converting Uint8Array to string...');
+      const decoder = new TextDecoder('utf-8');
+      encryptedString = decoder.decode(encryptedData);
+    } else {
+      encryptedString = encryptedData;
+    }
+
+    console.log('📝 Encrypted string length:', encryptedString.length);
+
     // Decrypt using AES
-    const decrypted = CryptoJS.AES.decrypt(encryptedData, SHARED_ENCRYPTION_KEY);
+    const decrypted = CryptoJS.AES.decrypt(encryptedString, SHARED_ENCRYPTION_KEY);
     const decryptedText = decrypted.toString(CryptoJS.enc.Utf8);
+    
+    console.log('🔓 Decrypted text length:', decryptedText?.length || 0);
     
     if (!decryptedText) {
       throw new Error('Decryption failed - wrong key or corrupted data');
