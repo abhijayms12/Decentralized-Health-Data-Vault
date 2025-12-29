@@ -17,8 +17,14 @@ export default function DiagnosticsDashboard({ contract, account }) {
   // Check encryption key on mount
   useEffect(() => {
     checkEncryptionKey();
-    loadRecentUploads();
   }, []);
+  
+  // Load recent uploads when contract is available or changes
+  useEffect(() => {
+    if (contract) {
+      loadRecentUploads();
+    }
+  }, [contract, account]);
 
   // Auto-dismiss messages after 5 seconds
   useEffect(() => {
@@ -62,7 +68,11 @@ export default function DiagnosticsDashboard({ contract, account }) {
   // Load recent uploads from localStorage
   const loadRecentUploads = () => {
     try {
-      const stored = localStorage.getItem(`diagnosticsRecentUploads_${account}`);
+      const contractAddress = contract?.target || contract?.address;
+      if (!contractAddress) return;
+      
+      const storageKey = `diagnosticsRecentUploads_${account}_${contractAddress}`;
+      const stored = localStorage.getItem(storageKey);
       if (stored) {
         setRecentUploads(JSON.parse(stored));
       }
@@ -73,6 +83,9 @@ export default function DiagnosticsDashboard({ contract, account }) {
 
   // Save upload to recent uploads
   const saveUploadToRecent = (patientAddr, filename, cid) => {
+    const contractAddress = contract?.target || contract?.address;
+    if (!contractAddress) return;
+    
     const upload = {
       patient: patientAddr,
       filename: filename,
@@ -82,7 +95,9 @@ export default function DiagnosticsDashboard({ contract, account }) {
     
     const updated = [upload, ...recentUploads].slice(0, 10); // Keep last 10
     setRecentUploads(updated);
-    localStorage.setItem(`diagnosticsRecentUploads_${account}`, JSON.stringify(updated));
+    
+    const storageKey = `diagnosticsRecentUploads_${account}_${contractAddress}`;
+    localStorage.setItem(storageKey, JSON.stringify(updated));
   };
 
   // Shorten address helper
@@ -182,18 +197,24 @@ export default function DiagnosticsDashboard({ contract, account }) {
     } catch (error) {
       console.error("Error uploading file:", error);
       
-      let errorMsg = "❌ Upload failed: ";
+      // Parse common error types
+      let errorMsg = "";
       
-      if (error.message.includes("No permission") || error.message.includes("has not granted")) {
-        errorMsg = "❌ Patient has not granted you permission. Patient must visit their dashboard and grant Diagnostics Lab access first.";
-        setHasAccess(false); // Mark access as denied
+      if (error.message.includes("No permission") || 
+          error.message.includes("has not granted") ||
+          error.message.includes("Not authorized") ||
+          error.message.includes("missing revert data") ||
+          error.code === "CALL_EXCEPTION") {
+        errorMsg = "❌ Access Denied: This patient has not granted you permission. The patient must visit their dashboard and grant Diagnostics Lab access first.";
+        setHasAccess(false);
       } else if (error.message.includes("ACTION_REJECTED")) {
-        errorMsg = "❌ Transaction rejected by user";
-      } else if (error.message.includes("Not authorized")) {
-        errorMsg = "❌ You don't have permission to add records for this patient. Patient must grant access first.";
-        setHasAccess(false); // Mark access as denied
+        errorMsg = "❌ Transaction rejected by user.";
+      } else if (error.message.includes("network") || error.message.includes("connection")) {
+        errorMsg = "❌ Network error: Please check your connection and try again.";
+      } else if (error.message.includes("insufficient funds")) {
+        errorMsg = "❌ Insufficient funds: Please add ETH to your wallet.";
       } else {
-        errorMsg += error.message;
+        errorMsg = `❌ Upload failed. Please ensure the patient has granted you access.`;
       }
       
       showMessage(errorMsg);
