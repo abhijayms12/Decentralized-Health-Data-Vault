@@ -125,12 +125,17 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "_patient",
+        "type": "address"
+      },
+      {
         "internalType": "string",
         "name": "_cid",
         "type": "string"
       }
     ],
-    "name": "addRecord",
+    "name": "addDoctorRecord",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -138,10 +143,18 @@
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "_user",
-        "type": "address"
-      },
+        "internalType": "string",
+        "name": "_cid",
+        "type": "string"
+      }
+    ],
+    "name": "addPatientRecord",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
       {
         "internalType": "enum HealthVault.Role",
         "name": "_role",
@@ -257,6 +270,25 @@
         "internalType": "struct HealthVault.Record[]",
         "name": "",
         "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_user",
+        "type": "address"
+      }
+    ],
+    "name": "getRole",
+    "outputs": [
+      {
+        "internalType": "enum HealthVault.Role",
+        "name": "",
+        "type": "uint8"
       }
     ],
     "stateMutability": "view",

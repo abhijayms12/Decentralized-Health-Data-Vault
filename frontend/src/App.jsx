@@ -197,15 +197,9 @@ function App() {
       console.log("Contract instance created at:", contractAddress);
       setContract(healthVaultContract);
 
-      // Get user role from contract
-      try {
-        const role = await healthVaultContract.roles(account);
-        console.log("User role:", Number(role));
-        setUserRole(Number(role));
-      } catch (roleError) {
-        console.error("Error fetching role:", roleError);
-        setUserRole(0); // Default to no role
-      }
+      // FIXED: Don't auto-load role - always show role selection on page load
+      // This ensures app starts at main page after dev server restart
+      setUserRole(0);
 
       setIsInitialized(true);
       setLoading(false);
@@ -273,15 +267,15 @@ function App() {
 
       console.log(`Assigning role ${roleType} to ${account}`);
       
-      // Call the contract function with proper parameters
-      const tx = await contract.assignRole(account, roleType);
+      // Call the contract function (self-assignment, only role parameter)
+      const tx = await contract.assignRole(roleType);
       console.log("Transaction sent:", tx.hash);
       
       await tx.wait();
       console.log("Transaction confirmed");
 
       // Refresh role from contract
-      const role = await contract.roles(account);
+      const role = await contract.getRole(account);
       const roleNumber = Number(role);
       console.log("Role updated to:", roleNumber);
       setUserRole(roleNumber);
@@ -313,6 +307,14 @@ function App() {
       case 4: return "Researcher";
       default: return "Unknown";
     }
+  };
+
+  // FIXED: Switch role without page reload - smooth transition
+  const switchRole = () => {
+    setUserRole(0);
+    setError("");
+    setLoading(false);
+    console.log("✓ Switched to role selection");
   };
 
   if (!account) {
@@ -455,8 +457,8 @@ function App() {
               {account.substring(0, 6)}...{account.substring(38)}
             </div>
             <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm"
+              onClick={switchRole}
+              className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm transition"
             >
               Switch Role
             </button>
