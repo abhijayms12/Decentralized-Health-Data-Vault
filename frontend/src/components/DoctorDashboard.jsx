@@ -30,7 +30,13 @@ export default function DoctorDashboard({ contract, account }) {
 
   // Load recent patients from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem('doctorRecentPatients');
+    if (!contract) return;
+    
+    const contractAddress = contract?.target || contract?.address;
+    if (!contractAddress) return;
+    
+    const storageKey = `doctorRecentPatients_${account}_${contractAddress}`;
+    const stored = localStorage.getItem(storageKey);
     if (stored) {
       try {
         setRecentPatients(JSON.parse(stored));
@@ -38,7 +44,7 @@ export default function DoctorDashboard({ contract, account }) {
         console.error('Failed to parse recent patients:', e);
       }
     }
-  }, []);
+  }, [contract, account]);
 
   // Auto-dismiss messages after 5 seconds
   useEffect(() => {
@@ -64,11 +70,16 @@ export default function DoctorDashboard({ contract, account }) {
   const addToRecentPatients = (address) => {
     if (!ethers.isAddress(address)) return;
     
+    const contractAddress = contract?.target || contract?.address;
+    if (!contractAddress) return;
+    
     setRecentPatients(prev => {
       // Remove if exists, add to front, keep only 5
       const filtered = prev.filter(addr => addr.toLowerCase() !== address.toLowerCase());
       const updated = [address, ...filtered].slice(0, 5);
-      localStorage.setItem('doctorRecentPatients', JSON.stringify(updated));
+      
+      const storageKey = `doctorRecentPatients_${account}_${contractAddress}`;
+      localStorage.setItem(storageKey, JSON.stringify(updated));
       return updated;
     });
   };
@@ -110,12 +121,24 @@ export default function DoctorDashboard({ contract, account }) {
     } catch (error) {
       console.error("Error fetching records:", error);
       
-      if (error.message.includes("Not authorized")) {
-        setMessage("❌ You are not authorized to view this patient's records. The patient must grant you access first.");
+      // Parse common error types
+      let errorMsg = "";
+      
+      if (error.message.includes("Not authorized") || 
+          error.message.includes("missing revert data") ||
+          error.code === "CALL_EXCEPTION") {
+        errorMsg = "❌ Access Denied: This patient has not granted you permission to view their records. The patient must visit their dashboard and grant you access first.";
+      } else if (error.message.includes("No records found")) {
+        errorMsg = "ℹ️ No records found for this patient.";
+      } else if (error.message.includes("network") || error.message.includes("connection")) {
+        errorMsg = "❌ Network error: Please check your connection and try again.";
+      } else if (error.message.includes("ACTION_REJECTED")) {
+        errorMsg = "❌ Transaction rejected by user.";
       } else {
-        setMessage(`❌ Failed to fetch records: ${error.message}`);
+        errorMsg = `❌ Failed to fetch records. Please ensure the patient has granted you access.`;
       }
       
+      setMessage(errorMsg);
       setRecords([]);
     } finally {
       setLoading(false);
