@@ -48,7 +48,6 @@ export default function DoctorDashboard({ contract, account }) {
       setLoading(true);
       setMessage("Fetching patient records...");
       setRecords([]);
-      setDecryptedFiles({});
 
       // Call smart contract to get records
       const patientRecords = await contract.getRecords(patientAddress);

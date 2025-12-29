@@ -133,7 +133,7 @@ export default function PatientDashboard({ contract, account }) {
 
       // 4. Store CID on blockchain
       setUploadProgress("Storing record on blockchain...");
-      const tx = await contract.addRecord(cid);
+      const tx = await contract.addPatientRecord(cid);
       console.log("✓ Transaction sent:", tx.hash);
       
       setUploadProgress("Waiting for confirmation...");
@@ -214,8 +214,24 @@ export default function PatientDashboard({ contract, account }) {
       return;
     }
 
+    // Prevent granting access to self
+    if (doctorAddress.toLowerCase() === account.toLowerCase()) {
+      showMessage("error", "Cannot grant access to your own address. Enter a different doctor's wallet address.");
+      return;
+    }
+
     try {
       setLoading(true);
+      showMessage("info", "Checking doctor's role...");
+
+      // Check if address is registered as a doctor
+      const doctorRole = await contract.getRole(doctorAddress);
+      if (Number(doctorRole) !== 2) { // 2 = DOCTOR role
+        showMessage("error", `This address is not registered as a Doctor. They need to connect their wallet and select the Doctor role first.`);
+        setLoading(false);
+        return;
+      }
+
       showMessage("info", "Granting access...");
 
       const tx = await contract.grantDoctorAccess(doctorAddress);
@@ -232,9 +248,11 @@ export default function PatientDashboard({ contract, account }) {
       
       let errorMsg = "Failed to grant access: ";
       if (error.message.includes("Address is not a doctor")) {
-        errorMsg += "This address is not registered as a doctor";
+        errorMsg += "This address is not registered as a doctor. They must select the Doctor role first.";
       } else if (error.message.includes("ACTION_REJECTED")) {
         errorMsg += "Transaction rejected";
+      } else if (error.code === "CALL_EXCEPTION") {
+        errorMsg += "Transaction would fail. Make sure the address is registered as a Doctor.";
       } else {
         errorMsg += error.message;
       }
@@ -314,6 +332,20 @@ export default function PatientDashboard({ contract, account }) {
           Upload PDF files (encrypted before storage on IPFS)
         </p>
 
+        {!encryptionKey && (
+          <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm text-yellow-800 mb-2">
+              🔐 Encryption key not initialized. Please sign a message to enable file uploads.
+            </p>
+            <button
+              onClick={initializeEncryptionKey}
+              className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm font-medium"
+            >
+              Initialize Encryption Key
+            </button>
+          </div>
+        )}
+
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -371,7 +403,7 @@ export default function PatientDashboard({ contract, account }) {
           Allow a doctor to view your health records
         </p>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 mb-3">
           <input
             type="text"
             placeholder="Doctor's Ethereum address (0x...)"
@@ -389,6 +421,15 @@ export default function PatientDashboard({ contract, account }) {
           >
             {loading ? "Granting..." : "Grant Access"}
           </button>
+        </div>
+        
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+          <p className="font-semibold mb-1">⚠️ Important:</p>
+          <ul className="list-disc list-inside space-y-1">
+            <li>The doctor must first connect their wallet and select the <strong>Doctor</strong> role</li>
+            <li>Enter their wallet address (not your own)</li>
+            <li>Once granted, they can view and download your encrypted health records</li>
+          </ul>
         </div>
       </div>
 
