@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import { decryptFileShared, isEncryptionConfigured } from "../utils/sharedEncryption";
-import { downloadFromIPFS } from "../utils/ipfs.js";
+import { encryptFileShared, decryptFileShared, isEncryptionConfigured } from "../utils/sharedEncryption";
+import { uploadToIPFS, downloadFromIPFS } from "../utils/ipfs.js";
 
 // TODO: Build a UI that:
 // 1. Takes a patient address as input.
@@ -17,6 +17,12 @@ export default function DoctorDashboard({ contract, account }) {
   const [downloadingCID, setDownloadingCID] = useState(null); // Track which file is downloading
   const [message, setMessage] = useState("");
   const [encryptionKey, setEncryptionKey] = useState(null);
+  
+  // Upload states
+  const [uploadPatientAddress, setUploadPatientAddress] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [recordType, setRecordType] = useState("prescription"); // prescription or consultation
 
   // Check if shared encryption key is configured
   useEffect(() => {
@@ -146,16 +152,170 @@ export default function DoctorDashboard({ contract, account }) {
     }
   };
 
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      const validTypes = ["application/pdf", "image/jpeg", "image/png", "image/jpg"];
+      if (!validTypes.includes(file.type)) {
+        setMessage("❌ Please select a PDF or image file (JPEG, PNG)");
+        return;
+      }
+      
+      // Validate file size (10MB max)
+      if (file.size > 10 * 1024 * 1024) {
+        setMessage("❌ File size must be less than 10MB");
+        return;
+      }
+      
+      setSelectedFile(file);
+      setMessage("");
+    }
+  };
+
+  const handleUploadRecord = async (e) => {
+    e.preventDefault();
+
+    if (!ethers.isAddress(uploadPatientAddress)) {
+      setMessage("❌ Invalid patient address");
+      return;
+    }
+
+    if (!selectedFile) {
+      setMessage("❌ Please select a file");
+      return;
+    }
+
+    if (!encryptionKey) {
+      setMessage("⚠️ Encryption key not configured. Please add VITE_ENCRYPTION_KEY to your .env file");
+      return;
+    }
+
+    try {
+      setUploading(true);
+      setMessage(`📁 Reading file...`);
+
+      // Read file
+      const fileData = await selectedFile.arrayBuffer();
+      
+      setMessage("🔐 Encrypting file...");
+      
+      // Encrypt file using shared key
+      const encryptedData = encryptFileShared(fileData);
+      
+      setMessage("📤 Uploading to IPFS...");
+      
+      // Upload to IPFS
+      const filename = `${recordType}-${Date.now()}-${selectedFile.name}`;
+      const cid = await uploadToIPFS(encryptedData, filename);
+      
+      setMessage("📝 Saving to blockchain...");
+      
+      // Add doctor record to blockchain
+      const tx = await contract.addDoctorRecord(uploadPatientAddress, cid);
+      
+      setMessage("⏳ Waiting for confirmation...");
+      await tx.wait();
+      
+      setMessage(`✅ ${recordType === 'prescription' ? 'Prescription' : 'Consultation record'} uploaded successfully! CID: ${cid}`);
+      
+      // Clear form
+      setSelectedFile(null);
+      setUploadPatientAddress("");
+      if (document.getElementById("doctor-file-upload")) {
+        document.getElementById("doctor-file-upload").value = "";
+      }
+      
+    } catch (error) {
+      console.error("Error uploading record:", error);
+      
+      if (error.message.includes("Not authorized")) {
+        setMessage("❌ You are not authorized to upload records for this patient. The patient must grant you access first.");
+      } else if (error.message.includes("user rejected")) {
+        setMessage("❌ Transaction cancelled");
+      } else {
+        setMessage(`❌ Failed to upload record: ${error.message}`);
+      }
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6">Doctor Dashboard</h1>
 
       {/* Status Message */}
       {message && (
-        <div className={`mb-4 p-4 rounded ${message.includes("Failed") || message.includes("Invalid") || message.includes("not authorized") ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+        <div className={`mb-4 p-4 rounded ${message.includes("Failed") || message.includes("Invalid") || message.includes("not authorized") || message.includes("❌") ? "bg-red-100 text-red-700" : message.includes("⚠️") ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"}`}>
           {message}
         </div>
       )}
+
+      {/* Upload Section */}
+      <div className="bg-white shadow-md rounded-lg p-6 mb-6">
+        <h2 className="text-xl font-semibold mb-4">📝 Upload Prescription/Consultation Record</h2>
+        <form onSubmit={handleUploadRecord} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Patient Wallet Address
+            </label>
+            <input
+              type="text"
+              value={uploadPatientAddress}
+              onChange={(e) => setUploadPatientAddress(e.target.value)}
+              placeholder="0x..."
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={uploading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Record Type
+            </label>
+            <select
+              value={recordType}
+              onChange={(e) => setRecordType(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={uploading}
+            >
+              <option value="prescription">💊 Prescription</option>
+              <option value="consultation">🩺 Consultation Record</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select File (PDF or Image, max 10MB)
+            </label>
+            <input
+              id="doctor-file-upload"
+              type="file"
+              accept=".pdf,image/jpeg,image/png,image/jpg"
+              onChange={handleFileSelect}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={uploading}
+            />
+            {selectedFile && (
+              <p className="mt-2 text-sm text-gray-600">
+                Selected: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+              </p>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={uploading || !selectedFile || !uploadPatientAddress}
+            className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+          >
+            {uploading ? "Uploading..." : `Upload ${recordType === 'prescription' ? 'Prescription' : 'Consultation Record'}`}
+          </button>
+        </form>
+        <p className="mt-3 text-sm text-gray-500">
+          ⚠️ You can only upload records for patients who have granted you doctor access
+        </p>
+      </div>
 
       {/* Patient Address Input */}
       <div className="bg-white shadow-md rounded-lg p-6 mb-6">
