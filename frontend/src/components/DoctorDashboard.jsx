@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
+import { motion, AnimatePresence } from "framer-motion";
 import { encryptFileShared, decryptFileShared, isEncryptionConfigured } from "../utils/sharedEncryption";
 import { uploadToIPFS, downloadFromIPFS } from "../utils/ipfs.js";
 
@@ -38,6 +39,16 @@ export default function DoctorDashboard({ contract, account }) {
       }
     }
   }, []);
+
+  // Auto-dismiss messages after 5 seconds
+  useEffect(() => {
+    if (message) {
+      const timer = setTimeout(() => {
+        setMessage("");
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [message]);
 
   // Check if shared encryption key is configured
   useEffect(() => {
@@ -289,32 +300,52 @@ export default function DoctorDashboard({ contract, account }) {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800">Doctor Dashboard</h1>
-
+    <div className="space-y-8">
       {/* Status Message */}
-      {message && (
-        <div className={`mb-6 p-4 rounded-lg ${
-          message.includes("❌") || message.includes("Failed") ? "bg-red-100 text-red-700" : 
-          message.includes("⚠️") ? "bg-yellow-100 text-yellow-700" : 
-          "bg-green-100 text-green-700"
-        }`}>
-          {message}
-        </div>
-      )}
-
-      {/* Patient Selector Component - Shared */}
-      <div className="bg-white shadow-lg rounded-lg p-6 mb-6 border-t-4 border-blue-500">
-        <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-          <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      <AnimatePresence mode="wait">
+        {message && (
+          <motion.div
+            key="message"
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className={`p-4 rounded-xl flex items-start gap-3 ${
+              message.includes("❌") || message.includes("Failed") ? "bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626]" : 
+              message.includes("⚠️") ? "bg-[#FFFBEB] border border-[#FCD34D] text-[#D97706]" : 
+              "bg-[#F0FDF4] border border-[#BBF7D0] text-[#16A34A]"
+            }`}>
+            <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+            {message.includes("❌") || message.includes("Failed") ? (
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            ) : message.includes("⚠️") ? (
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            ) : (
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            )}
           </svg>
-          Select Patient
-        </h2>
+          <span className="text-sm font-medium">{message}</span>
+        </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Patient Selector Component */}
+      <div className="floating-panel p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 bg-[#EFF6FF] rounded-xl flex items-center justify-center">
+            <svg className="w-5 h-5 text-[#2563EB]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-[#0F172A]">Select Patient</h2>
+            <p className="text-sm text-[#475569]">Enter or search for a patient address</p>
+          </div>
+        </div>
 
         {/* Search Input with Manual Paste Support */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-[#0F172A] mb-2">
             Search or Enter Patient Address
           </label>
           <div className="relative">
@@ -325,21 +356,22 @@ export default function DoctorDashboard({ contract, account }) {
                 const value = e.target.value;
                 setSearchQuery(value);
                 setSelectedPatient(value);
-                // Reset validation on typing
                 setShowValidation(false);
               }}
               placeholder="Type to search or paste full address (0x...)"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl 
+                focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent
+                placeholder-gray-400 text-[#0F172A] transition-all duration-200 pr-10"
             />
-            <svg className="absolute right-3 top-3.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="absolute right-4 top-3.5 w-5 h-5 text-[#94A3B8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
           
-          {/* Address Validation Indicator - Only show after button click with invalid address */}
+          {/* Address Validation Indicator */}
           {selectedPatient && showValidation && !ethers.isAddress(selectedPatient) && (
-            <div className="mt-2">
-              <span className="inline-flex items-center gap-1 text-sm text-red-700 bg-red-100 px-3 py-1 rounded-full">
+            <div className="mt-3">
+              <span className="inline-flex items-center gap-1.5 text-sm text-[#DC2626] bg-[#FEF2F2] px-3 py-1.5 rounded-lg font-medium">
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                 </svg>
@@ -351,8 +383,8 @@ export default function DoctorDashboard({ contract, account }) {
 
         {/* Recent Patients */}
         {recentPatients.length > 0 && (
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+          <div className="mb-5">
+            <label className="block text-sm font-medium text-[#0F172A] mb-3">
               Recent Patients
             </label>
             <div className="flex flex-wrap gap-2">
@@ -362,9 +394,10 @@ export default function DoctorDashboard({ contract, account }) {
                   onClick={() => {
                     setSelectedPatient(addr);
                     setSearchQuery('');
-                    setShowValidation(false); // No need to show validation for known-valid address
+                    setShowValidation(false);
                   }}
-                  className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium border border-blue-200 transition"
+                  className="px-4 py-2 bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] rounded-xl text-sm 
+                    font-semibold border border-[#BFDBFE] transition-all duration-200 hover:shadow-sm"
                   title={addr}
                 >
                   {shortenAddress(addr)}
@@ -374,22 +407,23 @@ export default function DoctorDashboard({ contract, account }) {
           </div>
         )}
 
-        {/* Filtered Patients Dropdown (if searching) */}
+        {/* Filtered Patients Dropdown */}
         {searchQuery && filteredPatients.length > 0 && (
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+          <div className="mb-5">
+            <label className="block text-sm font-medium text-[#0F172A] mb-3">
               Matching Patients
             </label>
-            <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg">
+            <div className="max-h-40 overflow-y-auto border border-gray-100 rounded-xl bg-[#F8FAFC]">
               {filteredPatients.map((addr, idx) => (
                 <button
                   key={idx}
                   onClick={() => {
                     setSelectedPatient(addr);
                     setSearchQuery('');
-                    setShowValidation(false); // No need to show validation for known-valid address
+                    setShowValidation(false);
                   }}
-                  className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm font-mono border-b last:border-b-0"
+                  className="w-full text-left px-4 py-3 hover:bg-white text-sm font-mono 
+                    border-b border-gray-100 last:border-b-0 transition-colors duration-200 text-[#475569] hover-glow"
                 >
                   {addr}
                 </button>
@@ -400,9 +434,9 @@ export default function DoctorDashboard({ contract, account }) {
 
         {/* Selected Patient Display */}
         {selectedPatient && ethers.isAddress(selectedPatient) && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-sm font-medium text-blue-900 mb-1">Selected Patient:</p>
-            <code className="text-xs bg-white px-2 py-1 rounded text-blue-800 break-all">
+          <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl p-4 animate-slide-up">
+            <p className="text-sm font-semibold text-[#1E40AF] mb-2">Selected Patient:</p>
+            <code className="text-xs bg-white px-3 py-1.5 rounded-lg text-[#2563EB] break-all block">
               {selectedPatient}
             </code>
           </div>
@@ -410,25 +444,33 @@ export default function DoctorDashboard({ contract, account }) {
       </div>
 
       {/* Two Panel Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Left Panel: Write Record */}
-        <div className="bg-white shadow-lg rounded-lg p-6 border-l-4 border-green-500">
-          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-            <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-            Write Record
-          </h2>
+        <div className="floating-panel p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-10 h-10 bg-[#F0FDFA] rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5 text-[#14B8A6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-[#0F172A]">Write Record</h2>
+              <p className="text-sm text-[#475569]">Upload prescription or consultation notes</p>
+            </div>
+          </div>
 
           <form onSubmit={handleUploadRecord} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-[#0F172A] mb-2">
                 Record Type
               </label>
               <select
                 value={recordType}
                 onChange={(e) => setRecordType(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="w-full px-4 py-3 rounded-xl 
+                  focus:outline-none focus:ring-2 focus:ring-[#14B8A6] focus:border-transparent
+                  text-[#0F172A] transition-all duration-300 cursor-pointer"
+                style={{background: 'rgba(255, 255, 255, 0.5)', border: '1px solid rgba(20, 184, 166, 0.15)'}}
                 disabled={uploading}
               >
                 <option value="prescription">💊 Prescription</option>
@@ -437,7 +479,7 @@ export default function DoctorDashboard({ contract, account }) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-[#0F172A] mb-2">
                 Select File (PDF or Image, max 10MB)
               </label>
               <input
@@ -445,63 +487,105 @@ export default function DoctorDashboard({ contract, account }) {
                 type="file"
                 accept=".pdf,image/jpeg,image/png,image/jpg"
                 onChange={handleFileSelect}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                className="block w-full text-sm text-[#475569]
+                  file:mr-4 file:py-2.5 file:px-5
+                  file:rounded-xl file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-[#F0FDFA] file:text-[#14B8A6]
+                  hover:file:bg-[#CCFBF1]
+                  file:transition-colors file:duration-200
+                  disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={uploading}
               />
               {selectedFile && (
-                <p className="mt-2 text-sm text-gray-600 flex items-center gap-1">
-                  <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                <div className="mt-3 flex items-center gap-2 text-sm text-[#0D9488] bg-[#F0FDFA] px-3 py-2 rounded-lg animate-slide-up">
+                  <svg className="w-4 h-4 icon-bounce" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
-                  {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
-                </p>
+                  <span className="truncate">{selectedFile.name}</span>
+                  <span className="text-[#475569]">({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)</span>
+                </div>
               )}
             </div>
 
             <button
               type="submit"
               disabled={uploading || !selectedFile || !selectedPatient || !ethers.isAddress(selectedPatient)}
-              className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition"
+              className="w-full bg-[#14B8A6] text-white px-6 py-3 rounded-xl hover:bg-[#0D9488] 
+                disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200
+                focus:outline-none focus:ring-2 focus:ring-[#14B8A6] focus:ring-offset-2
+                flex items-center justify-center gap-2 hover-glow"
             >
-              {uploading ? "Uploading..." : `Upload ${recordType === 'prescription' ? 'Prescription' : 'Consultation'}`}
+              {uploading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  Upload {recordType === 'prescription' ? 'Prescription' : 'Consultation'}
+                </>
+              )}
             </button>
           </form>
 
-          <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-3">
-            <p className="text-xs text-green-800">
-              <strong>Note:</strong> Patient must grant you access before you can upload records.
+          <div className="mt-5 bg-[#F0FDFA] border border-[#99F6E4] rounded-xl p-4">
+            <p className="text-xs text-[#0D9488] font-medium">
+              Patient must grant you access before you can upload records
             </p>
           </div>
         </div>
 
         {/* Right Panel: View Records */}
-        <div className="bg-white shadow-lg rounded-lg p-6 border-l-4 border-purple-500">
-          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-            <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            View Records
-          </h2>
+        <div className="floating-panel p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-10 h-10 bg-[#F5F3FF] rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5 text-[#8B5CF6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-[#0F172A]">View Records</h2>
+              <p className="text-sm text-[#475569]">Access patient health records</p>
+            </div>
+          </div>
 
           <button
             onClick={handleFetchRecords}
             disabled={loading || !selectedPatient || !ethers.isAddress(selectedPatient)}
-            className="w-full px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium mb-4 transition"
+            className="w-full bg-[#8B5CF6] text-white px-6 py-3 rounded-xl hover:bg-[#7C3AED] 
+              disabled:opacity-50 disabled:cursor-not-allowed font-semibold mb-5 transition-all duration-200
+              focus:outline-none focus:ring-2 focus:ring-[#8B5CF6] focus:ring-offset-2
+              flex items-center justify-center gap-2"
           >
-            {loading ? "Loading..." : "Fetch Patient Records"}
+            {loading ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Loading...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Fetch Patient Records
+              </>
+            )}
           </button>
 
           {records.length > 0 ? (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-semibold text-gray-700">
+            <div className="animate-slide-up">
+              <div className="flex items-center justify-between mb-4">
+                <span className="px-3 py-1 bg-[#F5F3FF] text-[#8B5CF6] rounded-full text-sm font-bold animate-bounce-in">
                   {records.length} Record{records.length !== 1 ? 's' : ''} Found
-                </p>
+                </span>
               </div>
               
-              <div className="space-y-3 max-h-96 overflow-y-auto">
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1 scrollbar-thin">
                 {records.map((record, index) => {
-                  // Generate filename based on uploader role and timestamp
                   const getDisplayName = () => {
                     const dateStr = new Date(Number(record.timestamp) * 1000).toLocaleDateString('en-US', { 
                       month: 'short', 
@@ -509,81 +593,104 @@ export default function DoctorDashboard({ contract, account }) {
                       year: 'numeric'
                     });
                     
-                    // Determine source based on uploader address
-                    // Patient records: uploaded by the patient themselves
-                    // Doctor records: uploaded by a doctor
-                    // Diagnostics records: uploaded by diagnostics
                     if (record.uploader.toLowerCase() === selectedPatient.toLowerCase()) {
                       return `Medical Record - ${dateStr}`;
                     }
-                    // If we had role info, we could distinguish doctor vs diagnostics
-                    // For now, assume other uploaders are medical professionals
                     return `Medical Note - ${dateStr}`;
                   };
                   
                   const displayName = getDisplayName();
                   
                   return (
-                  <div key={index} className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition">
-                    <div className="flex justify-between items-start gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900 text-sm truncate" title={displayName}>{displayName}</p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          <span className="font-semibold">Date:</span>{" "}
-                          {new Date(Number(record.timestamp) * 1000).toLocaleDateString()}
-                        </p>
-                        <p className="text-xs text-gray-600 truncate" title={record.cid}>
-                          <span className="font-semibold">CID:</span> {record.cid.substring(0, 20)}...
-                        </p>
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <button
-                          onClick={() => handleViewFile(record.cid, index)}
-                          disabled={downloadingCID === record.cid}
-                          className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
-                        >
-                          {downloadingCID === record.cid ? "..." : "View"}
-                        </button>
-                        <button
-                          onClick={() => handleDownloadFile(record.cid, index)}
-                          disabled={downloadingCID === record.cid}
-                          className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50 whitespace-nowrap"
-                        >
-                          {downloadingCID === record.cid ? "..." : "Download"}
-                        </button>
+                    <div key={index} className="rounded-xl p-4 transition-all duration-200 animate-slide-up hover-glow" style={{background: 'rgba(248, 250, 252, 0.6)', border: '1px solid rgba(255, 255, 255, 0.3)', animationDelay: `${index * 0.1}s`}}>
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-[#0F172A] text-sm truncate mb-2" title={displayName}>{displayName}</p>
+                          <p className="text-xs text-[#475569] flex items-center gap-1.5 mb-1">
+                            <svg className="w-3.5 h-3.5 text-[#94A3B8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            {new Date(Number(record.timestamp) * 1000).toLocaleDateString()}
+                          </p>
+                          <code className="text-xs text-[#475569] bg-white px-2 py-1 rounded-lg border border-gray-100 block truncate" title={record.cid}>
+                            CID: {record.cid.substring(0, 16)}...
+                          </code>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            onClick={() => handleViewFile(record.cid, index)}
+                            disabled={downloadingCID === record.cid}
+                            className="px-4 py-2 bg-[#2563EB] text-white rounded-lg text-xs font-semibold 
+                              hover:bg-[#1D4ED8] disabled:opacity-50 whitespace-nowrap transition-all duration-200
+                              focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:ring-offset-1"
+                          >
+                            {downloadingCID === record.cid ? "..." : "View"}
+                          </button>
+                          <button
+                            onClick={() => handleDownloadFile(record.cid, index)}
+                            disabled={downloadingCID === record.cid}
+                            className="px-4 py-2 bg-[#22C55E] text-white rounded-lg text-xs font-semibold 
+                              hover:bg-[#16A34A] disabled:opacity-50 whitespace-nowrap transition-all duration-200
+                              focus:outline-none focus:ring-2 focus:ring-[#22C55E] focus:ring-offset-1"
+                          >
+                            {downloadingCID === record.cid ? "..." : "Download"}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
                   );
                 })}
               </div>
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500">
-              <svg className="w-16 h-16 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <p className="text-sm">Select a patient and click "Fetch Patient Records"</p>
+            <div className="text-center py-12">
+              <div className="w-16 h-16 mx-auto mb-4 bg-[#F5F3FF] rounded-2xl flex items-center justify-center">
+                <svg className="w-8 h-8 text-[#C4B5FD]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <p className="text-[#475569] text-sm">Select a patient and click "Fetch Patient Records"</p>
             </div>
           )}
 
-          <div className="mt-4 bg-purple-50 border border-purple-200 rounded-lg p-3">
-            <p className="text-xs text-purple-800">
-              <strong>Note:</strong> You can only access records for patients who granted you permission.
+          <div className="mt-5 bg-[#F5F3FF] border border-[#DDD6FE] rounded-xl p-4">
+            <p className="text-xs text-[#7C3AED] font-medium">
+              You can only access records for patients who granted you permission
             </p>
           </div>
         </div>
       </div>
 
       {/* Help Section */}
-      <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-semibold text-blue-900 mb-2">How to Access Records</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>• Request the patient to grant you access using your wallet address: <code className="bg-blue-100 px-1 rounded">{account}</code></li>
-          <li>• Once granted, enter the patient's wallet address above</li>
-          <li>• You will be able to view and download their health records</li>
-          <li>• All files are encrypted and will be decrypted automatically when viewing</li>
-        </ul>
+      <div className="floating-panel p-5">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255, 255, 255, 0.4)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255, 255, 255, 0.6)' }}>
+            <svg className="w-6 h-6 text-[#2563EB]" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-[#0F172A] font-bold text-lg mb-2">How to Access Records</h3>
+            <ul className="space-y-2">
+              <li className="flex items-start gap-2 text-sm text-[#475569]">
+                <span className="w-5 h-5 bg-[#2563EB] text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">1</span>
+                <span>Request the patient to grant you access using your wallet: <code className="bg-white px-2 py-0.5 rounded-md text-[#2563EB] text-xs">{account.substring(0, 10)}...{account.substring(38)}</code></span>
+              </li>
+              <li className="flex items-start gap-2 text-sm text-[#475569]">
+                <span className="w-5 h-5 bg-[#2563EB] text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">2</span>
+                <span>Once granted, enter the patient's wallet address above</span>
+              </li>
+              <li className="flex items-start gap-2 text-sm text-[#475569]">
+                <span className="w-5 h-5 bg-[#2563EB] text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">3</span>
+                <span>You will be able to view, download, and upload records to their vault</span>
+              </li>
+              <li className="flex items-start gap-2 text-sm text-[#475569]">
+                <span className="w-5 h-5 bg-[#22C55E] text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">✓</span>
+                <span>All files are encrypted and will be decrypted automatically when viewing</span>
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
   );

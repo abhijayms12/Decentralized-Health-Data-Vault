@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
+import { motion, AnimatePresence } from "framer-motion";
 import { encryptFileShared, decryptFileShared, isEncryptionConfigured } from "../utils/sharedEncryption";
 import { uploadToIPFS, downloadFromIPFS, getIPFSGatewayURL } from "../utils/ipfs";
 
@@ -22,6 +23,16 @@ export default function PatientDashboard({ contract, account }) {
       checkEncryptionKey();
     }
   }, [contract, account]);
+
+  // Auto-dismiss messages after 5 seconds
+  useEffect(() => {
+    if (message.text) {
+      const timer = setTimeout(() => {
+        setMessage({ type: "", text: "" });
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [message.text]);
 
   // Check if shared encryption key is configured
   const checkEncryptionKey = () => {
@@ -405,11 +416,11 @@ export default function PatientDashboard({ contract, account }) {
     const source = getRecordSource(uploader);
     switch (source) {
       case 'patient':
-        return { label: 'Patient', color: 'bg-blue-100 text-blue-700' };
+        return { label: 'Patient', color: 'bg-[#EFF6FF] text-[#2563EB]' };
       case 'doctor':
-        return { label: 'Doctor', color: 'bg-green-100 text-green-700' };
+        return { label: 'Doctor', color: 'bg-[#F0FDFA] text-[#0D9488]' };
       case 'diagnostics':
-        return { label: 'Diagnostics', color: 'bg-purple-100 text-purple-700' };
+        return { label: 'Diagnostics', color: 'bg-[#F5F3FF] text-[#8B5CF6]' };
       default:
         return { label: 'Other', color: 'bg-gray-100 text-gray-700' };
     }
@@ -472,26 +483,31 @@ export default function PatientDashboard({ contract, account }) {
     return (
       <div
         key={record.id}
-        className="flex-shrink-0 w-72 border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg hover:border-blue-300 transition bg-white"
+        className="flex-shrink-0 w-72 rounded-2xl p-5 transition-all duration-200"
+        style={{background: 'rgba(255, 255, 255, 0.6)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255, 255, 255, 0.4)', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)'}}
+        onMouseEnter={(e) => {e.currentTarget.style.boxShadow = '0 4px 12px rgba(20, 184, 166, 0.08)'; e.currentTarget.style.transform = 'translateY(-2px)'}}
+        onMouseLeave={(e) => {e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.02)'; e.currentTarget.style.transform = 'translateY(0)'}}
       >
         {/* Header with badge */}
-        <div className="flex items-start justify-between mb-3">
+        <div className="flex items-start justify-between mb-4">
           <div className="flex-1 min-w-0">
-            <h4 className="font-bold text-gray-900 text-base truncate mb-1" title={filename}>
+            <h4 className="font-bold text-[#0F172A] text-sm truncate mb-2" title={filename}>
               {filename}
             </h4>
-            <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${badge.color}`}>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${badge.color}`}>
               {badge.label}
             </span>
           </div>
-          <svg className="w-6 h-6 text-red-500 flex-shrink-0 ml-2" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
-          </svg>
+          <div className="w-10 h-10 bg-[#FEF2F2] rounded-xl flex items-center justify-center flex-shrink-0 ml-3">
+            <svg className="w-5 h-5 text-[#EF4444]" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
+            </svg>
+          </div>
         </div>
 
         {/* Date */}
-        <div className="text-sm text-gray-600 mb-2">
-          <svg className="w-4 h-4 inline mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="flex items-center gap-2 text-sm text-[#475569] mb-3">
+          <svg className="w-4 h-4 text-[#94A3B8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
           {formatDate(record.timestamp)}
@@ -499,7 +515,7 @@ export default function PatientDashboard({ contract, account }) {
 
         {/* CID */}
         <div className="mb-4">
-          <code className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 break-all">
+          <code className="text-xs bg-[#F8FAFC] px-2.5 py-1.5 rounded-lg text-[#475569] border border-gray-100 block truncate">
             {shortCID}
           </code>
         </div>
@@ -508,8 +524,9 @@ export default function PatientDashboard({ contract, account }) {
         <div className="flex gap-2">
           <button
             onClick={() => handleViewRecord(record)}
-            className="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 
-              font-medium text-sm transition flex items-center justify-center gap-1"
+            className="flex-1 bg-[#2563EB] text-white px-3 py-2.5 rounded-xl hover:bg-[#1D4ED8] 
+              font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-1.5
+              focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:ring-offset-2"
             title="Open file in new tab"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -520,8 +537,9 @@ export default function PatientDashboard({ contract, account }) {
           </button>
           <button
             onClick={() => handleDownloadRecord(record)}
-            className="flex-1 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 
-              font-medium text-sm transition flex items-center justify-center gap-1"
+            className="flex-1 bg-[#22C55E] text-white px-3 py-2.5 rounded-xl hover:bg-[#16A34A] 
+              font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-1.5
+              focus:outline-none focus:ring-2 focus:ring-[#22C55E] focus:ring-offset-2"
             title="Download file"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -535,34 +553,50 @@ export default function PatientDashboard({ contract, account }) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Status Message */}
-      {message.text && (
-        <div className={`p-4 rounded-lg ${
-          message.type === "success" ? "bg-green-100 text-green-700" :
-          message.type === "error" ? "bg-red-100 text-red-700" :
-          "bg-blue-100 text-blue-700"
-        }`}>
-          {message.text}
-        </div>
-      )}
+      <AnimatePresence mode="wait">
+        {message.text && (
+          <motion.div
+            key="message"
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className={`p-4 rounded-xl flex items-start gap-3 ${
+              message.type === "success" ? "bg-[#F0FDF4] border border-[#BBF7D0] text-[#16A34A]" :
+              message.type === "error" ? "bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626]" :
+              "bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB]"
+            }`}>
+            <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+            {message.type === "success" ? (
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            ) : message.type === "error" ? (
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            ) : (
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            )}
+          </svg>
+          <span className="text-sm font-medium">{message.text}</span>
+        </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ⚠️ MOCK IPFS WARNING */}
       {import.meta.env.VITE_LIGHTHOUSE_API_KEY === undefined || 
        import.meta.env.VITE_LIGHTHOUSE_API_KEY === "" || 
        import.meta.env.VITE_LIGHTHOUSE_API_KEY === "your_lighthouse_api_key_here" ? (
-        <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-4">
+        <div className="bg-[#FFFBEB] border border-[#FCD34D] rounded-xl p-4">
           <div className="flex items-start gap-3">
-            <svg className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
+            <div className="w-10 h-10 bg-[#FEF3C7] rounded-xl flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-[#D97706]" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
             <div>
-              <h3 className="text-yellow-800 font-semibold mb-1">⚠️ Development Mode: Files NOT Persistent</h3>
-              <p className="text-yellow-700 text-sm mb-2">
-                Mock IPFS is active. Uploaded files are stored in browser memory and will be <strong>LOST when you close the browser or refresh the page</strong>.
-              </p>
-              <p className="text-yellow-700 text-sm">
-                <strong>To enable persistent storage:</strong> Set up Lighthouse API key in <code className="bg-yellow-100 px-1 rounded">.env</code> file or implement Express backend server (see <code>QUICKSTART.md</code>).
+              <h3 className="text-[#92400E] font-semibold mb-1">Development Mode: Files NOT Persistent</h3>
+              <p className="text-[#A16207] text-sm">
+                Mock IPFS is active. Uploaded files are stored in browser memory and will be lost when you close the browser.
               </p>
             </div>
           </div>
@@ -570,26 +604,36 @@ export default function PatientDashboard({ contract, account }) {
       ) : null}
 
       {/* File Upload Section */}
-      <div className="bg-white shadow rounded-lg p-6">
-        <h2 className="text-xl font-semibold mb-4">Upload Health Record</h2>
-        <p className="text-gray-600 mb-4">
-          Upload PDF files (encrypted before storage on IPFS)
-        </p>
+      <div className="lightweight-section p-8">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 bg-[#EFF6FF] rounded-xl flex items-center justify-center">
+            <svg className="w-5 h-5 text-[#2563EB]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-[#0F172A]">Upload Health Record</h2>
+            <p className="text-sm text-[#475569]">PDF files are encrypted before storage</p>
+          </div>
+        </div>
 
         {!encryptionKey && (
-          <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <p className="text-sm text-yellow-800 mb-2">
-              🔐 Encryption key not configured. Please add VITE_ENCRYPTION_KEY to your .env file and restart the dev server.
-            </p>
-            <p className="text-xs text-yellow-700">
-              Ask the project owner for the shared encryption key value.
-            </p>
+          <div className="mb-5 p-4 bg-[#FFFBEB] border border-[#FCD34D] rounded-xl">
+            <div className="flex items-start gap-3">
+              <svg className="w-5 h-5 text-[#D97706] flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <div className="text-sm">
+                <p className="text-[#92400E] font-medium mb-1">Encryption key not configured</p>
+                <p className="text-[#A16207]">Add VITE_ENCRYPTION_KEY to your .env file</p>
+              </div>
+            </div>
           </div>
         )}
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-[#0F172A] mb-2">
               Select PDF File
             </label>
             <input
@@ -598,30 +642,34 @@ export default function PatientDashboard({ contract, account }) {
               accept="application/pdf"
               onChange={handleFileSelect}
               disabled={uploading || !encryptionKey}
-              className="block w-full text-sm text-gray-500
-                file:mr-4 file:py-2 file:px-4
-                file:rounded-lg file:border-0
+              className="block w-full text-sm text-[#475569]
+                file:mr-4 file:py-2.5 file:px-5
+                file:rounded-xl file:border-0
                 file:text-sm file:font-semibold
-                file:bg-blue-50 file:text-blue-700
-                hover:file:bg-blue-100
+                file:bg-[#EFF6FF] file:text-[#2563EB]
+                hover:file:bg-[#DBEAFE]
+                file:transition-colors file:duration-200
                 disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </div>
 
           {selectedFile && (
-            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-              <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
-              </svg>
-              <span className="text-sm text-gray-700">{selectedFile.name}</span>
-              <span className="text-xs text-gray-500">
-                ({(selectedFile.size / 1024).toFixed(2)} KB)
-              </span>
+            <div className="flex items-center gap-3 p-4 bg-[#F8FAFC] rounded-xl border border-gray-100 animate-slide-up">
+              <div className="w-10 h-10 bg-[#FEF2F2] rounded-xl flex items-center justify-center icon-bounce">
+                <svg className="w-5 h-5 text-[#EF4444]" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-[#0F172A]">{selectedFile.name}</p>
+                <p className="text-xs text-[#475569]">{(selectedFile.size / 1024).toFixed(2)} KB</p>
+              </div>
             </div>
           )}
 
           {uploadProgress && (
-            <div className="text-sm text-blue-600 font-medium">
+            <div className="flex items-center gap-3 text-sm text-[#2563EB] font-medium bg-[#EFF6FF] px-4 py-3 rounded-xl animate-slide-up">
+              <div className="w-4 h-4 border-2 border-[#2563EB] border-t-transparent rounded-full animate-spin"></div>
               {uploadProgress}
             </div>
           )}
@@ -629,109 +677,135 @@ export default function PatientDashboard({ contract, account }) {
           <button
             onClick={handleFileUpload}
             disabled={!selectedFile || uploading || !encryptionKey}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 
-              disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition"
+            className="w-full bg-[#2563EB] text-white py-3 px-6 rounded-xl hover:bg-[#1D4ED8] 
+              disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200
+              focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:ring-offset-2
+              flex items-center justify-center gap-2 hover-glow"
           >
-            {uploading ? "Uploading..." : "Encrypt & Upload to IPFS"}
+            {uploading ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Uploading...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5 icon-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Encrypt & Upload to IPFS
+              </>
+            )}
           </button>
         </div>
       </div>
 
       {/* Grant Access Section - Side by Side */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Grant Doctor Access */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-            <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-            </svg>
-            Grant Doctor Access
-          </h2>
-          <p className="text-gray-600 text-sm mb-4">
-            Allow a doctor to view your health records
-          </p>
+        <div className="floating-panel p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-10 h-10 bg-[#F0FDFA] rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5 text-[#14B8A6]" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-[#0F172A]">Grant Doctor Access</h2>
+              <p className="text-sm text-[#475569]">Allow viewing your records</p>
+            </div>
+          </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             <input
               type="text"
-              placeholder="Doctor's address (0x...)"
+              placeholder="Doctor's wallet address (0x...)"
               value={doctorAddress}
               onChange={(e) => setDoctorAddress(e.target.value)}
               disabled={loading}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 
-                focus:ring-green-500 focus:border-transparent disabled:opacity-50 text-sm"
+              className="w-full px-4 py-3 rounded-xl 
+                focus:outline-none focus:ring-2 focus:ring-[#14B8A6] focus:border-transparent
+                placeholder-gray-400 text-[#0F172A] transition-all duration-200 disabled:opacity-50"
+              style={{background: 'rgba(255, 255, 255, 0.5)', border: '1px solid rgba(20, 184, 166, 0.15)'}}
             />
             <button
               onClick={handleGrantAccess}
               disabled={loading || !doctorAddress}
-              className="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 
-                disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition text-sm"
+              className="w-full bg-[#14B8A6] text-white px-4 py-3 rounded-xl hover:bg-[#0D9488] 
+                disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200
+                focus:outline-none focus:ring-2 focus:ring-[#14B8A6] focus:ring-offset-2 hover-glow"
             >
               {loading ? "Granting..." : "Grant Access"}
             </button>
             
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-800">
-              <p className="font-semibold mb-1">✓ Required:</p>
-              <ul className="list-disc list-inside space-y-0.5 text-green-700">
-                <li>Doctor must have Doctor role assigned</li>
-                <li>Enter their wallet address</li>
-              </ul>
+            <div className="bg-[#F0FDFA] border border-[#99F6E4] rounded-xl p-4">
+              <p className="text-xs text-[#0D9488] font-medium">Doctor must have the Doctor role assigned first</p>
             </div>
           </div>
         </div>
 
         {/* Grant Diagnostics Access */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-            <svg className="w-5 h-5 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-            </svg>
-            Grant Diagnostics Access
-          </h2>
-          <p className="text-gray-600 text-sm mb-4">
-            Allow a lab to upload diagnostic reports
-          </p>
+        <div className="floating-panel p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-10 h-10 bg-[#F5F3FF] rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5 text-[#8B5CF6]" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-[#0F172A]">Grant Diagnostics Access</h2>
+              <p className="text-sm text-[#475569]">Allow uploading reports</p>
+            </div>
+          </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             <input
               type="text"
-              placeholder="Lab's address (0x...)"
+              placeholder="Lab's wallet address (0x...)"
               value={diagnosticsAddress}
               onChange={(e) => setDiagnosticsAddress(e.target.value)}
               disabled={loading}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 
-                focus:ring-purple-500 focus:border-transparent disabled:opacity-50 text-sm"
+              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl 
+                focus:outline-none focus:ring-2 focus:ring-[#8B5CF6] focus:border-transparent
+                placeholder-gray-400 text-[#0F172A] transition-all duration-200 disabled:opacity-50"
             />
             <button
               onClick={handleGrantDiagnosticsAccess}
               disabled={loading || !diagnosticsAddress}
-              className="w-full bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 
-                disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition text-sm"
+              className="w-full bg-[#8B5CF6] text-white px-4 py-3 rounded-xl hover:bg-[#7C3AED] 
+                disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200
+                focus:outline-none focus:ring-2 focus:ring-[#8B5CF6] focus:ring-offset-2 hover-glow-indigo"
             >
               {loading ? "Granting..." : "Grant Access"}
             </button>
             
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-xs text-purple-800">
-              <p className="font-semibold mb-1">✓ Required:</p>
-              <ul className="list-disc list-inside space-y-0.5 text-purple-700">
-                <li>Lab must have Diagnostics role assigned</li>
-                <li>They can upload reports to your vault</li>
-              </ul>
+            <div className="bg-[#F5F3FF] border border-[#DDD6FE] rounded-xl p-4">
+              <p className="text-xs text-[#7C3AED] font-medium">Lab must have the Diagnostics role assigned first</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Records List */}
-      <div className="bg-white shadow rounded-lg p-6">
+      <div className="lightweight-section p-8">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">My Health Records</h2>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#EFF6FF] rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5 text-[#2563EB]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-[#0F172A]">My Health Records</h2>
+              <p className="text-sm text-[#475569]">{records.length} records stored securely</p>
+            </div>
+          </div>
           <button
             onClick={loadRecords}
             disabled={loading}
-            className="text-blue-600 hover:text-blue-700 font-medium text-sm disabled:opacity-50 flex items-center gap-1"
+            className="text-[#2563EB] hover:text-[#1D4ED8] font-semibold text-sm disabled:opacity-50 
+              flex items-center gap-1.5 px-4 py-2 rounded-xl hover:bg-[#EFF6FF] transition-all duration-200 hover-glow"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={`w-4 h-4 ${loading ? 'animate-spin' : 'icon-rotate'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             {loading ? "Loading..." : "Refresh"}
@@ -739,34 +813,35 @@ export default function PatientDashboard({ contract, account }) {
         </div>
 
         {loading && records.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
-            <svg className="w-12 h-12 mx-auto mb-3 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Loading records...
+          <div className="space-y-4">
+            <div className="skeleton h-24 rounded-xl"></div>
+            <div className="skeleton h-24 rounded-xl stagger-1"></div>
+            <div className="skeleton h-24 rounded-xl stagger-2"></div>
+            <p className="text-center text-[#475569] font-medium mt-6 animate-slide-up">Loading records...</p>
           </div>
         ) : records.length === 0 ? (
-          <div className="text-center py-12">
-            <svg className="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <p className="text-gray-500 text-lg">No records yet</p>
-            <p className="text-gray-400 text-sm mt-1">Upload your first health record above</p>
+          <div className="text-center py-16">
+            <div className="w-20 h-20 mx-auto mb-4 bg-[#F8FAFC] rounded-2xl flex items-center justify-center border-2 border-dashed border-gray-200">
+              <svg className="w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <p className="text-[#0F172A] font-semibold text-lg mb-1">No records yet</p>
+            <p className="text-[#475569] text-sm">Upload your first health record above</p>
           </div>
         ) : (
           <div className="space-y-8">
             {/* Patient Uploaded Records */}
             {patientRecords.length > 0 && (
               <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-1 h-7 bg-blue-500 rounded"></div>
-                  <h3 className="text-lg font-bold text-gray-800">Patient Uploaded Records</h3>
-                  <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-1.5 h-8 bg-[#2563EB] rounded-full"></div>
+                  <h3 className="text-lg font-bold text-[#0F172A]">Patient Uploaded Records</h3>
+                  <span className="px-3 py-1 bg-[#EFF6FF] text-[#2563EB] rounded-full text-xs font-bold">
                     {patientRecords.length}
                   </span>
                 </div>
-                <div className="overflow-x-auto pb-4">
+                <div className="overflow-x-auto pb-4 scrollbar-thin">
                   <div className="flex gap-4 min-w-max">
                     {patientRecords.map(record => renderRecordCard(record))}
                   </div>
@@ -777,14 +852,14 @@ export default function PatientDashboard({ contract, account }) {
             {/* Doctor Notes & Prescriptions */}
             {doctorRecords.length > 0 && (
               <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-1 h-7 bg-green-500 rounded"></div>
-                  <h3 className="text-lg font-bold text-gray-800">Doctor Notes & Prescriptions</h3>
-                  <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-1.5 h-8 bg-[#14B8A6] rounded-full"></div>
+                  <h3 className="text-lg font-bold text-[#0F172A]">Doctor Notes & Prescriptions</h3>
+                  <span className="px-3 py-1 bg-[#F0FDFA] text-[#0D9488] rounded-full text-xs font-bold">
                     {doctorRecords.length}
                   </span>
                 </div>
-                <div className="overflow-x-auto pb-4">
+                <div className="overflow-x-auto pb-4 scrollbar-thin">
                   <div className="flex gap-4 min-w-max">
                     {doctorRecords.map(record => renderRecordCard(record))}
                   </div>
@@ -795,14 +870,14 @@ export default function PatientDashboard({ contract, account }) {
             {/* Diagnostic Test Reports */}
             {diagnosticsRecords.length > 0 && (
               <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-1 h-7 bg-purple-500 rounded"></div>
-                  <h3 className="text-lg font-bold text-gray-800">Diagnostic Test Reports</h3>
-                  <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-1.5 h-8 bg-[#8B5CF6] rounded-full"></div>
+                  <h3 className="text-lg font-bold text-[#0F172A]">Diagnostic Test Reports</h3>
+                  <span className="px-3 py-1 bg-[#F5F3FF] text-[#8B5CF6] rounded-full text-xs font-bold">
                     {diagnosticsRecords.length}
                   </span>
                 </div>
-                <div className="overflow-x-auto pb-4">
+                <div className="overflow-x-auto pb-4 scrollbar-thin">
                   <div className="flex gap-4 min-w-max">
                     {diagnosticsRecords.map(record => renderRecordCard(record))}
                   </div>
@@ -814,18 +889,40 @@ export default function PatientDashboard({ contract, account }) {
       </div>
 
       {/* Info Section */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex gap-3">
-          <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-          </svg>
-          <div className="text-sm text-blue-800">
-            <p className="font-semibold mb-1">🔒 Your data is secure</p>
-            <ul className="list-disc list-inside space-y-1 text-blue-700">
-              <li>Files are encrypted client-side before upload</li>
-              <li>Encryption key derived from your wallet signature</li>
-              <li>Only encrypted data is stored on IPFS</li>
-              <li>Smart contract stores only CIDs, not personal data</li>
+      <div className="floating-panel p-5">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255, 255, 255, 0.4)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255, 255, 255, 0.6)' }}>
+            <svg className="w-6 h-6 text-[#2563EB]" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-[#0F172A] font-bold text-lg mb-2">Your Data is Secure</h3>
+            <ul className="space-y-2">
+              <li className="flex items-center gap-2 text-sm text-[#475569]">
+                <svg className="w-4 h-4 text-[#22C55E] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+                Files are encrypted client-side before upload
+              </li>
+              <li className="flex items-center gap-2 text-sm text-[#475569]">
+                <svg className="w-4 h-4 text-[#22C55E] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+                Encryption key derived from your wallet signature
+              </li>
+              <li className="flex items-center gap-2 text-sm text-[#475569]">
+                <svg className="w-4 h-4 text-[#22C55E] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+                Only encrypted data is stored on IPFS
+              </li>
+              <li className="flex items-center gap-2 text-sm text-[#475569]">
+                <svg className="w-4 h-4 text-[#22C55E] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+                Smart contract stores only CIDs, not personal data
+              </li>
             </ul>
           </div>
         </div>
