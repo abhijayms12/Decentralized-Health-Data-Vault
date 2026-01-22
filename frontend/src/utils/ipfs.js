@@ -37,6 +37,7 @@ export async function uploadToIPFS(encryptedData, originalFilename = "encrypted-
 
     // Upload to Lighthouse using Files API (try multiple endpoints)
     const endpoints = [
+      "https://node.lighthouse.storage/api/v0/add",
       "https://upload.lighthouse.storage/api/v0/add",
       "https://api.lighthouse.storage/api/v0/add"
     ];
@@ -47,22 +48,38 @@ export async function uploadToIPFS(encryptedData, originalFilename = "encrypted-
     for (const endpoint of endpoints) {
       try {
         console.log(`   Trying endpoint: ${endpoint}`);
+        
+        // Use fetch with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
         response = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${apiKey}`,
             "Accept": "application/json"
           },
-          body: formData
+          body: formData,
+          signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
         
         if (response.ok) {
           console.log(`   ✅ Connected to ${endpoint}`);
           break;
+        } else {
+          console.warn(`   ❌ ${endpoint} returned status ${response.status}`);
+          lastError = new Error(`HTTP ${response.status}`);
         }
       } catch (err) {
-        console.warn(`   ❌ ${endpoint} failed:`, err.message);
-        lastError = err;
+        if (err.name === 'AbortError') {
+          console.warn(`   ❌ ${endpoint} timed out`);
+          lastError = new Error('Connection timeout');
+        } else {
+          console.warn(`   ❌ ${endpoint} failed:`, err.message);
+          lastError = err;
+        }
         continue;
       }
     }
@@ -155,6 +172,7 @@ export async function downloadFromIPFS(cid) {
       `https://gateway.lighthouse.storage/ipfs/${cid}`,
       `https://ipfs.io/ipfs/${cid}`,
       `https://cloudflare-ipfs.com/ipfs/${cid}`,
+      `https://dweb.link/ipfs/${cid}`,
       `https://gateway.pinata.cloud/ipfs/${cid}`
     ];
 
@@ -165,7 +183,7 @@ export async function downloadFromIPFS(cid) {
         console.log(`Trying: ${gateway}`);
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 sec timeout
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 sec timeout per gateway
         
         const response = await fetch(gateway, {
           method: "GET",
@@ -178,10 +196,17 @@ export async function downloadFromIPFS(cid) {
           const arrayBuffer = await response.arrayBuffer();
           console.log("✅ Downloaded from IPFS:", arrayBuffer.byteLength, "bytes");
           return new Uint8Array(arrayBuffer);
+        } else {
+          console.warn(`Gateway returned status ${response.status}`);
         }
       } catch (err) {
-        lastError = err;
-        console.warn(`Gateway ${gateway} failed:`, err.message);
+        if (err.name === 'AbortError') {
+          console.warn(`Gateway ${gateway} timed out`);
+          lastError = new Error('Gateway timeout');
+        } else {
+          console.warn(`Gateway ${gateway} failed:`, err.message);
+          lastError = err;
+        }
         continue;
       }
     }
