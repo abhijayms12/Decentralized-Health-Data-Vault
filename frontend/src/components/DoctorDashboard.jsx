@@ -153,24 +153,28 @@ export default function DoctorDashboard({ contract, account }) {
 
     try {
       setDownloadingCID(cid);
-      setMessage(`Fetching file from IPFS (may take 30+ seconds)...`);
+      console.log("Fetching file from IPFS:", cid);
       
-      // FIXED: Use IPFS utility with multiple gateway fallbacks
+      // Use IPFS utility with multiple gateway fallbacks
       const encryptedData = await downloadFromIPFS(cid);
-      
-      setMessage("Decrypting file...");
+      console.log("✓ Downloaded from IPFS");
       
       // Decrypt using shared key
       const blob = decryptFileShared(encryptedData);
+      console.log("✓ File decrypted");
+      
+      // Open in new tab immediately (before any state updates)
       const url = window.URL.createObjectURL(blob);
-      
-      setMessage("File decrypted successfully");
-      
-      // Open in new tab
-      window.open(url, "_blank");
+      const newWindow = window.open(url, "_blank");
       
       // Clean up URL after a delay
       setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+
+      if (newWindow) {
+        setMessage("✓ File opened successfully");
+      } else {
+        setMessage("⚠️ Pop-up blocked. Please allow pop-ups for this site.");
+      }
 
     } catch (error) {
       console.error("Error viewing file:", error);

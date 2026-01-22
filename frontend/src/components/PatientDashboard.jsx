@@ -222,26 +222,28 @@ export default function PatientDashboard({ contract, account }) {
     }
 
     try {
-      showMessage("info", "Loading file...");
+      console.log("Loading file:", record.cid);
 
       // 1. Download from IPFS
       const encryptedData = await downloadFromIPFS(record.cid);
       console.log("✓ Downloaded from IPFS");
 
-      showMessage("info", "Decrypting file...");
-
       // 2. Decrypt the file using shared key
       const blob = decryptFileShared(encryptedData);
       console.log("✓ File decrypted");
 
-      // 3. Open in new tab
+      // 3. Open in new tab immediately (before any state updates)
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
+      const newWindow = window.open(url, "_blank");
       
       // Clean up after 60 seconds
       setTimeout(() => URL.revokeObjectURL(url), 60000);
 
-      showMessage("success", "✓ File opened successfully");
+      if (newWindow) {
+        showMessage("success", "✓ File opened successfully");
+      } else {
+        showMessage("error", "Pop-up blocked. Please allow pop-ups for this site.");
+      }
 
     } catch (error) {
       console.error("View failed:", error);
