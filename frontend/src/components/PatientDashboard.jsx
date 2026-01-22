@@ -671,9 +671,9 @@ export default function PatientDashboard({ contract, account }) {
       </AnimatePresence>
 
       {/* ⚠️ MOCK IPFS WARNING */}
-      {import.meta.env.VITE_LIGHTHOUSE_API_KEY === undefined || 
-       import.meta.env.VITE_LIGHTHOUSE_API_KEY === "" || 
-       import.meta.env.VITE_LIGHTHOUSE_API_KEY === "your_lighthouse_api_key_here" ? (
+      {import.meta.env.VITE_PINATA_JWT === undefined || 
+       import.meta.env.VITE_PINATA_JWT === "" || 
+       import.meta.env.VITE_PINATA_JWT === "your_pinata_jwt_token_here" ? (
         <div className="bg-[#FFFBEB] border border-[#FCD34D] rounded-xl p-4">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 bg-[#FEF3C7] rounded-xl flex items-center justify-center flex-shrink-0">
@@ -684,7 +684,7 @@ export default function PatientDashboard({ contract, account }) {
             <div>
               <h3 className="text-[#92400E] font-semibold mb-1">Development Mode: Files NOT Persistent</h3>
               <p className="text-[#A16207] text-sm">
-                Mock IPFS is active. Uploaded files are stored in browser memory and will be lost when you close the browser.
+                Pinata JWT not configured. Files are stored in browser memory and will be lost when you close the browser.
               </p>
             </div>
           </div>
