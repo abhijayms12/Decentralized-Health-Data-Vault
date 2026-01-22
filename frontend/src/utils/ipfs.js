@@ -1,31 +1,30 @@
 /**
  * IPFS utilities for Health Data Vault
- * Uses Lighthouse for permanent IPFS storage
- * https://lighthouse.storage
+ * Uses Pinata for permanent IPFS storage
+ * https://pinata.cloud
  */
 
 /**
- * Upload encrypted file to IPFS using Lighthouse
+ * Upload encrypted file to IPFS using Pinata
  * @param {string} encryptedData - Encrypted file data (CryptoJS encrypted string)
  * @param {string} originalFilename - Original filename
  * @returns {Promise<string>} - IPFS CID
  */
 export async function uploadToIPFS(encryptedData, originalFilename = "encrypted-file") {
-  const apiKey = import.meta.env.VITE_LIGHTHOUSE_API_KEY;
+  const pinataJWT = import.meta.env.VITE_PINATA_JWT;
   
   console.log("📤 Upload - Encrypted data type:", typeof encryptedData);
   console.log("📤 Upload - Encrypted data length:", encryptedData?.length);
   
-  if (!apiKey) {
-    console.warn("⚠️  Lighthouse API key not found - using mock IPFS");
+  if (!pinataJWT) {
+    console.warn("⚠️  Pinata JWT not found - using mock IPFS");
     return generateMockCID(encryptedData);
   }
 
   try {
-    console.log("📤 Uploading to Lighthouse IPFS...");
+    console.log("📤 Uploading to Pinata IPFS...");
     console.log("   File:", originalFilename + ".enc");
     console.log("   Size:", encryptedData.length, "bytes");
-    console.log("   API Key (first 10 chars):", apiKey.substring(0, 10));
     
     // Create FormData with the file
     const formData = new FormData();
@@ -35,62 +34,32 @@ export async function uploadToIPFS(encryptedData, originalFilename = "encrypted-
     });
     formData.append("file", file);
 
-    // Upload to Lighthouse using Files API (try multiple endpoints)
-    const endpoints = [
-      "https://node.lighthouse.storage/api/v0/add",
-      "https://upload.lighthouse.storage/api/v0/add",
-      "https://api.lighthouse.storage/api/v0/add"
-    ];
+    // Upload to Pinata
+    console.log("   Trying: https://api.pinata.cloud/pinning/pinFileToIPFS");
     
-    let response;
-    let lastError;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
-    for (const endpoint of endpoints) {
-      try {
-        console.log(`   Trying endpoint: ${endpoint}`);
-        
-        // Use fetch with timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-        
-        response = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Accept": "application/json"
-          },
-          body: formData,
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (response.ok) {
-          console.log(`   ✅ Connected to ${endpoint}`);
-          break;
-        } else {
-          console.warn(`   ❌ ${endpoint} returned status ${response.status}`);
-          lastError = new Error(`HTTP ${response.status}`);
-        }
-      } catch (err) {
-        if (err.name === 'AbortError') {
-          console.warn(`   ❌ ${endpoint} timed out`);
-          lastError = new Error('Connection timeout');
-        } else {
-          console.warn(`   ❌ ${endpoint} failed:`, err.message);
-          lastError = err;
-        }
-        continue;
-      }
-    }
+    const response = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${pinataJWT}`
+      },
+      body: formData,
+      signal: controller.signal
+    });
     
-    if (!response || !response.ok) {
-      throw lastError || new Error("All Lighthouse endpoints failed");
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`   ❌ Pinata returned status ${response.status}:`, errorText);
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
 
     const data = await response.json();
-    console.log("📦 Lighthouse response:", data);
-    const cid = data.Hash || data.cid || data.IpfsHash;
+    console.log("📦 Pinata response:", data);
+    const cid = data.IpfsHash;
     
     if (!cid) {
       console.error("❌ No CID in response:", data);
@@ -98,12 +67,12 @@ export async function uploadToIPFS(encryptedData, originalFilename = "encrypted-
       return generateMockCID(encryptedData);
     }
 
-    console.log("✅ Uploaded to Lighthouse IPFS successfully");
+    console.log("✅ Uploaded to Pinata IPFS successfully");
     console.log("   CID:", cid);
     return cid;
     
   } catch (error) {
-    console.error("❌ Upload to Lighthouse failed:", error.message);
+    console.error("❌ Upload to Pinata failed:", error.message);
     console.warn("⚠️  Using mock IPFS fallback");
     return generateMockCID(encryptedData);
   }
@@ -117,8 +86,7 @@ export async function uploadToIPFS(encryptedData, originalFilename = "encrypted-
  * ⚠️ WARNING: Mock IPFS stores files in browser sessionStorage
  * - Files are LOST when browser closes or tab is refreshed
  * - NOT suitable for production use
- * - For persistent storage, implement Express backend with Lighthouse/Pinata
- * - TODO: Replace with backend API endpoint (see .github/copilot-instructions.md)
+ * - For persistent storage, use Pinata with valid JWT token
  */
 function generateMockCID(data) {
   console.log("📦 Mock storage - Data type:", typeof data);
@@ -169,11 +137,10 @@ export async function downloadFromIPFS(cid) {
     
     // Try multiple IPFS gateways
     const gateways = [
-      `https://gateway.lighthouse.storage/ipfs/${cid}`,
+      `https://gateway.pinata.cloud/ipfs/${cid}`,
       `https://ipfs.io/ipfs/${cid}`,
       `https://cloudflare-ipfs.com/ipfs/${cid}`,
       `https://dweb.link/ipfs/${cid}`,
-      `https://gateway.pinata.cloud/ipfs/${cid}`
     ];
 
     let lastError;
