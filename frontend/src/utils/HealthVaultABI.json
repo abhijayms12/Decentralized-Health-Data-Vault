@@ -105,6 +105,31 @@
     "type": "event"
   },
   {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "userIdHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum HealthVault.Role",
+        "name": "role",
+        "type": "uint8"
+      }
+    ],
+    "name": "UserIdRegistered",
+    "type": "event"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -114,6 +139,11 @@
       {
         "internalType": "string",
         "name": "_cid",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "_filename",
         "type": "string"
       }
     ],
@@ -133,6 +163,11 @@
         "internalType": "string",
         "name": "_cid",
         "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "_filename",
+        "type": "string"
       }
     ],
     "name": "addDoctorRecord",
@@ -145,6 +180,11 @@
       {
         "internalType": "string",
         "name": "_cid",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "_filename",
         "type": "string"
       }
     ],
@@ -164,6 +204,30 @@
     "name": "assignRole",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "_rolePrefix",
+        "type": "string"
+      },
+      {
+        "internalType": "address",
+        "name": "_user",
+        "type": "address"
+      }
+    ],
+    "name": "computeUserIdHash",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "pure",
     "type": "function"
   },
   {
@@ -210,6 +274,11 @@
             "internalType": "address",
             "name": "uploader",
             "type": "address"
+          },
+          {
+            "internalType": "string",
+            "name": "filename",
+            "type": "string"
           }
         ],
         "internalType": "struct HealthVault.Record",
@@ -265,6 +334,11 @@
             "internalType": "address",
             "name": "uploader",
             "type": "address"
+          },
+          {
+            "internalType": "string",
+            "name": "filename",
+            "type": "string"
           }
         ],
         "internalType": "struct HealthVault.Record[]",
@@ -289,6 +363,25 @@
         "internalType": "enum HealthVault.Role",
         "name": "",
         "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_user",
+        "type": "address"
+      }
+    ],
+    "name": "getUserIdHash",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
       }
     ],
     "stateMutability": "view",
@@ -363,6 +456,70 @@
         "internalType": "bool",
         "name": "",
         "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_user",
+        "type": "address"
+      }
+    ],
+    "name": "hasRegisteredUserId",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "registerUserId",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "_shortHash",
+        "type": "bytes4"
+      }
+    ],
+    "name": "resolveShortUserId",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "_userIdHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "resolveUserId",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
       }
     ],
     "stateMutability": "view",

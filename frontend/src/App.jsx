@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { motion, AnimatePresence } from "framer-motion";
+import { encodeAddressToId, ROLE_ENUM } from "./utils/userId.js";
 import AnimatedBackground from "./components/AnimatedBackground";
 import LandingPage from "./components/LandingPage";
 import PatientDashboard from "./components/PatientDashboard";
@@ -216,27 +217,51 @@ function App() {
 
       console.log(`Requesting role assignment: ${getRoleName(roleType)}`);
       
-      // Always send transaction to blockchain - let user confirm in MetaMask
+      // Step 1: Assign role on blockchain
       const tx = await contract.assignRole(roleType);
-      console.log("Transaction sent, waiting for confirmation...");
+      console.log("Role assignment transaction sent, waiting for confirmation...");
       
       await tx.wait();
-      console.log("Transaction confirmed!");
+      console.log("✓ Role assigned successfully!");
+
+      // Step 2: Check if UserID is already registered
+      console.log("Checking UserID registration status...");
+      const userIdHash = await contract.getUserIdHash(account);
+      const isAlreadyRegistered = userIdHash !== '0x0000000000000000000000000000000000000000000000000000000000000000';
+
+      if (!isAlreadyRegistered) {
+        // Step 3: Auto-register UserID if not already registered
+        console.log("UserID not registered, registering now...");
+        const registerTx = await contract.registerUserId();
+        console.log("UserID registration transaction sent, waiting for confirmation...");
+        
+        await registerTx.wait();
+        console.log("✓ UserID registered successfully!");
+      } else {
+        console.log("✓ UserID already registered, skipping registration");
+      }
 
       setUserRole(roleType);
       setError("");
       setLoading(false);
 
-      console.log(`✓ Role assigned successfully: ${getRoleName(roleType)}`);
+      console.log(`✓ Complete! Role: ${getRoleName(roleType)}`);
     } catch (error) {
-      console.error("Error assigning role:", error);
+      console.error("Error during role assignment or UserID registration:", error);
       
-      let errorMsg = "Failed to assign role: ";
+      let errorMsg = "Failed: ";
       
-      if (error.message.includes("user rejected")) {
+      if (error.message.includes("user rejected") || error.message.includes("ACTION_REJECTED")) {
         errorMsg = "Transaction cancelled by user";
       } else if (error.message.includes("Role already assigned")) {
         errorMsg = "You already have a role assigned. You cannot change roles.";
+      } else if (error.message.includes("UserID already registered")) {
+        // This shouldn't happen due to our check, but handle it gracefully
+        console.log("UserID was already registered, continuing...");
+        setUserRole(roleType);
+        setError("");
+        setLoading(false);
+        return;
       } else {
         errorMsg += error.message;
       }
@@ -431,9 +456,9 @@ function App() {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm text-[#64748B]">Connected Wallet</p>
+                  <p className="text-sm text-[#64748B]">{userRole > 0 ? 'Your ID' : 'Connected Wallet'}</p>
                   <code className="text-lg font-semibold text-[#0F172A]">
-                    {account.substring(0, 8)}...{account.substring(36)}
+                    {userRole > 0 ? encodeAddressToId(account, userRole) : `${account.substring(0, 8)}...${account.substring(36)}`}
                   </code>
                 </div>
               </div>
@@ -563,7 +588,7 @@ function App() {
               <div className="flex-1 flex items-center gap-3">
                 <div className="hidden sm:flex items-center gap-3 px-4 py-2 rounded-xl" style={{ background: 'rgba(255, 255, 255, 0.4)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255, 255, 255, 0.6)' }}>
                   <div className="w-2 h-2 bg-[#10B981] rounded-full animate-pulse"></div>
-                  <code className="text-sm text-[#64748B] font-medium">{account.substring(0, 6)}...{account.substring(38)}</code>
+                  <code className="text-sm text-[#64748B] font-medium">{userRole > 0 ? encodeAddressToId(account, userRole) : `${account.substring(0, 6)}...${account.substring(38)}`}</code>
                 </div>
               </div>
 

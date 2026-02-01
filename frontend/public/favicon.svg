@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Background circle with gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e40af;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="heartGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ef4444;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#dc2626;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="50" cy="50" r="48" fill="url(#bgGradient)" stroke="#1e3a8a" stroke-width="2"/>
+  
+  <!-- Heart shape -->
+  <path d="M 50 70 C 50 70, 35 55, 35 45 C 35 38, 40 35, 45 35 C 48 35, 50 37, 50 40 C 50 37, 52 35, 55 35 C 60 35, 65 38, 65 45 C 65 55, 50 70, 50 70 Z" 
+        fill="url(#heartGradient)" stroke="#991b1b" stroke-width="1"/>
+  
+  <!-- Stethoscope earpieces -->
+  <path d="M 25 25 Q 28 20, 32 22" stroke="#e5e7eb" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M 35 25 Q 38 20, 42 22" stroke="#e5e7eb" stroke-width="3" fill="none" stroke-linecap="round"/>
+  
+  <!-- Stethoscope tubes -->
+  <path d="M 32 22 Q 32 30, 38 38" stroke="#e5e7eb" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M 42 22 Q 42 30, 38 38" stroke="#e5e7eb" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  
+  <!-- Stethoscope chest piece -->
+  <circle cx="38" cy="40" r="5" fill="#d1d5db" stroke="#9ca3af" stroke-width="1.5"/>
+  <circle cx="38" cy="40" r="3" fill="#6b7280"/>
+  
+  <!-- Small pulse line on heart -->
+  <path d="M 42 45 L 44 42 L 46 48 L 48 45 L 50 45" 
+        stroke="#fef2f2" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

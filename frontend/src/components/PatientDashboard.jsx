@@ -1,8 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ethers } from "ethers";
 import { motion, AnimatePresence } from "framer-motion";
 import { encryptFileShared, decryptFileShared, isEncryptionConfigured } from "../utils/sharedEncryption";
 import { uploadToIPFS, downloadFromIPFS, getIPFSGatewayURL } from "../utils/ipfs";
+import { encodeAddressToId, validatePatientInput, isValidUserId, ROLE_ENUM, parseUserId, formatFileSize, getRolePrefix } from "../utils/userId";
+
+/**
+ * PatientDashboard - Phase 4 Updated
+ * 
+ * Changes:
+ * - Added Patient UserID display (PAT-XXXXXXXX format) at top of dashboard
+ * - UserID is derived from wallet address using keccak256 hash
+ * - Patients can copy their UserID to share with doctors/diagnostics
+ * - Download functionality retained (patients own their data)
+ */
 
 export default function PatientDashboard({ contract, account }) {
   const [records, setRecords] = useState([]);
@@ -15,6 +26,14 @@ export default function PatientDashboard({ contract, account }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState("");
   const [uploaderRoles, setUploaderRoles] = useState({}); // Store roles of uploaders
+
+  // Generate Patient UserID from wallet address (deterministic, no storage needed)
+  const patientUserId = useMemo(() => {
+    if (account) {
+      return encodeAddressToId(account, 'PAT');
+    }
+    return 'PAT-00000000';
+  }, [account]);
 
   // Load patient records on mount
   useEffect(() => {
@@ -58,7 +77,8 @@ export default function PatientDashboard({ contract, account }) {
         id: index,
         cid: record.cid,
         timestamp: Number(record.timestamp),
-        uploader: record.uploader
+        uploader: record.uploader,
+        filename: record.filename || '' // Include filename from contract
       }));
       
       setRecords(recordsArray);
@@ -141,14 +161,14 @@ export default function PatientDashboard({ contract, account }) {
       const encryptedData = encryptFileShared(fileData);
       console.log("✓ File encrypted");
 
-      // 3. Upload to IPFS via Lighthouse
-      setUploadProgress("Uploading to Lighthouse IPFS...");
+      // 3. Upload to IPFS
+      setUploadProgress("Uploading to IPFS...");
       const cid = await uploadToIPFS(encryptedData, selectedFile.name);
       console.log("✓ Uploaded to IPFS, CID:", cid);
 
-      // 4. Store CID on blockchain
+      // 4. Store CID on blockchain with filename
       setUploadProgress("Storing record on blockchain...");
-      const tx = await contract.addPatientRecord(cid);
+      const tx = await contract.addPatientRecord(cid, selectedFile.name);
       console.log("✓ Transaction sent:", tx.hash);
       
       setUploadProgress("Waiting for confirmation...");
@@ -254,28 +274,67 @@ export default function PatientDashboard({ contract, account }) {
   // Grant doctor access
   const handleGrantAccess = async () => {
     if (!doctorAddress) {
-      showMessage("error", "Please enter doctor's address");
-      return;
-    }
-
-    // Validate Ethereum address
-    if (!ethers.isAddress(doctorAddress)) {
-      showMessage("error", "Invalid Ethereum address");
-      return;
-    }
-
-    // Prevent granting access to self
-    if (doctorAddress.toLowerCase() === account.toLowerCase()) {
-      showMessage("error", "Cannot grant access to your own address. Enter a different doctor's wallet address.");
+      showMessage("error", "Please enter Doctor ID (DOC-XXXXXXXX)");
       return;
     }
 
     try {
       setLoading(true);
+      
+      // Validate and resolve input (supports both address and UserID)
+      const validation = validatePatientInput(doctorAddress);
+      
+      let resolvedAddress = null;
+      
+      if (validation.type === 'address') {
+        resolvedAddress = validation.value;
+      } else if (validation.type === 'userId') {
+        showMessage("info", "Resolving Doctor ID...");
+        
+        // Parse UserID to get the short hash
+        const { prefix, hash } = parseUserId(validation.value);
+        
+        // Convert hash string to bytes4
+        const shortHashBytes = '0x' + hash;
+        
+        // Try to resolve via contract using short hash
+        try {
+          resolvedAddress = await contract.resolveShortUserId(shortHashBytes);
+          if (!resolvedAddress || resolvedAddress === ethers.ZeroAddress) {
+            showMessage("error", "Doctor ID not found. Make sure the doctor has registered their UserID on-chain by calling registerUserId() first.");
+            setLoading(false);
+            return;
+          }
+          
+          // Verify the role matches
+          if (prefix !== 'DOC') {
+            showMessage("error", `Invalid ID type. Expected Doctor ID (DOC-XXXXXXXX), got ${prefix}-${hash}`);
+            setLoading(false);
+            return;
+          }
+        } catch (err) {
+          console.error('Resolution error:', err);
+          showMessage("error", "Failed to resolve Doctor ID. They may not have registered yet.");
+          setLoading(false);
+          return;
+        }
+      } else {
+        showMessage("error", validation.error || "Invalid Doctor ID. Expected format: DOC-XXXXXXXX");
+        setLoading(false);
+        return;
+      }
+      
+      // Prevent granting access to self
+      if (resolvedAddress.toLowerCase() === account.toLowerCase()) {
+        showMessage("error", "Cannot grant access to your own address.");
+        setLoading(false);
+        return;
+      }
+
       showMessage("info", "Checking doctor's role...");
 
       // Check if address is registered as a doctor
-      const doctorRole = await contract.getRole(doctorAddress);
+      const doctorRole = await contract.getRole(resolvedAddress);
       if (Number(doctorRole) !== 2) { // 2 = DOCTOR role
         showMessage("error", `This address is not registered as a Doctor. They need to connect their wallet and select the Doctor role first.`);
         setLoading(false);
@@ -284,13 +343,15 @@ export default function PatientDashboard({ contract, account }) {
 
       showMessage("info", "Granting access...");
 
-      const tx = await contract.grantDoctorAccess(doctorAddress);
+      const tx = await contract.grantDoctorAccess(resolvedAddress);
       console.log("Transaction sent:", tx.hash);
       
       await tx.wait();
       console.log("Access granted");
 
-      showMessage("success", `✓ Access granted to ${doctorAddress.substring(0, 10)}...`);
+      // Generate doctor's UserID for display
+      const doctorUserId = encodeAddressToId(resolvedAddress, 'DOC');
+      showMessage("success", `✓ Access granted to ${doctorUserId}`);
       setDoctorAddress("");
 
     } catch (error) {
@@ -316,28 +377,67 @@ export default function PatientDashboard({ contract, account }) {
   // Grant diagnostics access
   const handleGrantDiagnosticsAccess = async () => {
     if (!diagnosticsAddress) {
-      showMessage("error", "Please enter diagnostics lab address");
-      return;
-    }
-
-    // Validate Ethereum address
-    if (!ethers.isAddress(diagnosticsAddress)) {
-      showMessage("error", "Invalid Ethereum address");
-      return;
-    }
-
-    // Prevent granting access to self
-    if (diagnosticsAddress.toLowerCase() === account.toLowerCase()) {
-      showMessage("error", "Cannot grant access to your own address. Enter a different diagnostics lab's wallet address.");
+      showMessage("error", "Please enter Diagnostics ID (DIA-XXXXXXXX)");
       return;
     }
 
     try {
       setLoading(true);
+      
+      // Validate and resolve input (supports both address and UserID)
+      const validation = validatePatientInput(diagnosticsAddress);
+      
+      let resolvedAddress = null;
+      
+      if (validation.type === 'address') {
+        resolvedAddress = validation.value;
+      } else if (validation.type === 'userId') {
+        showMessage("info", "Resolving Diagnostics ID...");
+        
+        // Parse UserID to get the short hash
+        const { prefix, hash } = parseUserId(validation.value);
+        
+        // Convert hash string to bytes4
+        const shortHashBytes = '0x' + hash;
+        
+        // Try to resolve via contract using short hash
+        try {
+          resolvedAddress = await contract.resolveShortUserId(shortHashBytes);
+          if (!resolvedAddress || resolvedAddress === ethers.ZeroAddress) {
+            showMessage("error", "Diagnostics ID not found. Make sure the lab has registered their UserID on-chain.");
+            setLoading(false);
+            return;
+          }
+          
+          // Verify the role matches
+          if (prefix !== 'DIA') {
+            showMessage("error", `Invalid ID type. Expected Diagnostics ID (DIA-XXXXXXXX), got ${prefix}-${hash}`);
+            setLoading(false);
+            return;
+          }
+        } catch (err) {
+          console.error('Resolution error:', err);
+          showMessage("error", "Failed to resolve Diagnostics ID. They may not have registered yet.");
+          setLoading(false);
+          return;
+        }
+      } else {
+        showMessage("error", validation.error || "Invalid Diagnostics ID. Expected format: DIA-XXXXXXXX");
+        setLoading(false);
+        return;
+      }
+      
+      // Prevent granting access to self
+      if (resolvedAddress.toLowerCase() === account.toLowerCase()) {
+        showMessage("error", "Cannot grant access to your own address.");
+        setLoading(false);
+        return;
+      }
+
       showMessage("info", "Checking diagnostics lab role...");
 
       // Check if address is registered as diagnostics
-      const diagnosticsRole = await contract.getRole(diagnosticsAddress);
+      const diagnosticsRole = await contract.getRole(resolvedAddress);
       if (Number(diagnosticsRole) !== 3) { // 3 = DIAGNOSTICS role
         showMessage("error", `This address is not registered as a Diagnostics lab. They need to connect their wallet and select the Diagnostics role first.`);
         setLoading(false);
@@ -346,13 +446,15 @@ export default function PatientDashboard({ contract, account }) {
 
       showMessage("info", "Granting diagnostics access...");
 
-      const tx = await contract.grantDiagnosticsAccess(diagnosticsAddress);
+      const tx = await contract.grantDiagnosticsAccess(resolvedAddress);
       console.log("Transaction sent:", tx.hash);
       
       await tx.wait();
       console.log("Diagnostics access granted");
 
-      showMessage("success", `✓ Diagnostics access granted to ${diagnosticsAddress.substring(0, 10)}...`);
+      // Generate diagnostics UserID for display
+      const diagnosticsUserId = encodeAddressToId(resolvedAddress, 'DIA');
+      showMessage("success", `✓ Diagnostics access granted to ${diagnosticsUserId}`);
       setDiagnosticsAddress("");
 
     } catch (error) {
@@ -378,27 +480,61 @@ export default function PatientDashboard({ contract, account }) {
   // Revoke doctor access
   const handleRevokeAccess = async () => {
     if (!doctorAddress) {
-      showMessage("error", "Please enter doctor's address to revoke");
-      return;
-    }
-
-    // Validate Ethereum address
-    if (!ethers.isAddress(doctorAddress)) {
-      showMessage("error", "Invalid Ethereum address");
+      showMessage("error", "Please enter Doctor ID (DOC-XXXXXXXX) to revoke access");
       return;
     }
 
     try {
       setLoading(true);
+      
+      // Validate and resolve input
+      const validation = validatePatientInput(doctorAddress);
+      
+      let resolvedAddress = null;
+      
+      if (validation.type === 'address') {
+        resolvedAddress = validation.value;
+      } else if (validation.type === 'userId') {
+        showMessage("info", "Resolving Doctor ID...");
+        
+        const { prefix, hash } = parseUserId(validation.value);
+        const shortHashBytes = '0x' + hash;
+        
+        try {
+          resolvedAddress = await contract.resolveShortUserId(shortHashBytes);
+          if (!resolvedAddress || resolvedAddress === ethers.ZeroAddress) {
+            showMessage("error", "Doctor ID not found.");
+            setLoading(false);
+            return;
+          }
+          
+          if (prefix !== 'DOC') {
+            showMessage("error", `Invalid ID type. Expected DOC-XXXXXXXX, got ${prefix}-${hash}`);
+            setLoading(false);
+            return;
+          }
+        } catch (err) {
+          showMessage("error", "Failed to resolve Doctor ID.");
+          setLoading(false);
+          return;
+        }
+      } else {
+        showMessage("error", validation.error || "Invalid input.");
+        setLoading(false);
+        return;
+      }
+
       showMessage("info", "Revoking doctor access...");
 
-      const tx = await contract.revokeDoctorAccess(doctorAddress);
+      const tx = await contract.revokeDoctorAccess(resolvedAddress);
       console.log("Transaction sent:", tx.hash);
       
       await tx.wait();
       console.log("Access revoked");
 
-      showMessage("success", `✓ Access revoked from ${doctorAddress.substring(0, 10)}...`);
+      // Generate doctor's UserID for display
+      const doctorUserId = encodeAddressToId(resolvedAddress, 'DOC');
+      showMessage("success", `✓ Access revoked from ${doctorUserId}`);
       setDoctorAddress("");
 
     } catch (error) {
@@ -422,27 +558,61 @@ export default function PatientDashboard({ contract, account }) {
   // Revoke diagnostics access
   const handleRevokeDiagnosticsAccess = async () => {
     if (!diagnosticsAddress) {
-      showMessage("error", "Please enter diagnostics lab address to revoke");
-      return;
-    }
-
-    // Validate Ethereum address
-    if (!ethers.isAddress(diagnosticsAddress)) {
-      showMessage("error", "Invalid Ethereum address");
+      showMessage("error", "Please enter Diagnostics ID (DIA-XXXXXXXX) to revoke access");
       return;
     }
 
     try {
       setLoading(true);
+      
+      // Validate and resolve input
+      const validation = validatePatientInput(diagnosticsAddress);
+      
+      let resolvedAddress = null;
+      
+      if (validation.type === 'address') {
+        resolvedAddress = validation.value;
+      } else if (validation.type === 'userId') {
+        showMessage("info", "Resolving Diagnostics ID...");
+        
+        const { prefix, hash } = parseUserId(validation.value);
+        const shortHashBytes = '0x' + hash;
+        
+        try {
+          resolvedAddress = await contract.resolveShortUserId(shortHashBytes);
+          if (!resolvedAddress || resolvedAddress === ethers.ZeroAddress) {
+            showMessage("error", "Diagnostics ID not found.");
+            setLoading(false);
+            return;
+          }
+          
+          if (prefix !== 'DIA') {
+            showMessage("error", `Invalid ID type. Expected DIA-XXXXXXXX, got ${prefix}-${hash}`);
+            setLoading(false);
+            return;
+          }
+        } catch (err) {
+          showMessage("error", "Failed to resolve Diagnostics ID.");
+          setLoading(false);
+          return;
+        }
+      } else {
+        showMessage("error", validation.error || "Invalid input.");
+        setLoading(false);
+        return;
+      }
+
       showMessage("info", "Revoking diagnostics access...");
 
-      const tx = await contract.revokeDiagnosticsAccess(diagnosticsAddress);
+      const tx = await contract.revokeDiagnosticsAccess(resolvedAddress);
       console.log("Transaction sent:", tx.hash);
       
       await tx.wait();
       console.log("Diagnostics access revoked");
 
-      showMessage("success", `✓ Diagnostics access revoked from ${diagnosticsAddress.substring(0, 10)}...`);
+      // Generate diagnostics UserID for display
+      const diagnosticsUserId = encodeAddressToId(resolvedAddress, 'DIA');
+      showMessage("success", `✓ Diagnostics access revoked from ${diagnosticsUserId}`);
       setDiagnosticsAddress("");
 
     } catch (error) {
@@ -543,10 +713,14 @@ export default function PatientDashboard({ contract, account }) {
 
   const { patientRecords, doctorRecords, diagnosticsRecords } = groupRecordsBySource();
 
-  // Helper: Get filename from CID or use fallback
+  // Helper: Get filename from record or use fallback
   const getRecordFilename = (record) => {
-    // If CID contains filename info, extract it
-    // Otherwise use generic name based on source
+    // Use actual filename if available, otherwise fallback to generic name
+    if (record.filename && record.filename.trim() !== '') {
+      return record.filename;
+    }
+    
+    // Fallback for old records without filename
     const source = getRecordSource(record.uploader);
     const dateStr = new Date(record.timestamp * 1000).toLocaleDateString('en-US', { 
       month: 'short', 
@@ -644,6 +818,34 @@ export default function PatientDashboard({ contract, account }) {
 
   return (
     <div className="space-y-8">
+      {/* Patient's Own UserID Display */}
+      <div className="floating-panel p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#2563EB] rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm text-[#475569]">Your Patient ID</p>
+              <p className="font-bold text-[#1E40AF] font-mono text-lg">{patientUserId}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(patientUserId);
+              showMessage("success", "✅ Patient ID copied to clipboard!");
+            }}
+            className="px-4 py-2 bg-white text-[#2563EB] rounded-lg text-sm font-semibold 
+              hover:bg-[#EFF6FF] transition-colors border border-[#BFDBFE]"
+          >
+            Copy ID
+          </button>
+        </div>
+        <p className="text-xs text-[#64748B] mt-2">Share this ID with doctors and diagnostics labs so they can identify you</p>
+      </div>
+
       {/* Status Message */}
       <AnimatePresence mode="wait">
         {message.text && (
@@ -809,7 +1011,7 @@ export default function PatientDashboard({ contract, account }) {
             {/* Common Address Input */}
             <input
               type="text"
-              placeholder="Doctor's wallet address (0x...)"
+              placeholder="Doctor ID (DOC-XXXXXXXX)"
               value={doctorAddress}
               onChange={(e) => setDoctorAddress(e.target.value)}
               disabled={loading}
@@ -872,7 +1074,7 @@ export default function PatientDashboard({ contract, account }) {
             {/* Common Address Input */}
             <input
               type="text"
-              placeholder="Lab's wallet address (0x...)"
+              placeholder="Diagnostics ID (DIA-XXXXXXXX)"
               value={diagnosticsAddress}
               onChange={(e) => setDiagnosticsAddress(e.target.value)}
               disabled={loading}

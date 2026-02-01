@@ -17,6 +17,7 @@ contract HealthVault {
         string cid;
         uint256 timestamp;
         address uploader;
+        string filename;
     }
     
     // Role assignment
@@ -31,11 +32,27 @@ contract HealthVault {
     // Diagnostics access: patient => diagnostics lab => hasAccess
     mapping(address => mapping(address => bool)) private diagnosticsAccess;
     
+    // =====================================================
+    // UserID System: Hash-based deterministic user IDs
+    // Format: ROLE-HASH (e.g., PAT-9F3C8A2D)
+    // Hash = first 8 hex chars of keccak256(rolePrefix, address)
+    // =====================================================
+    
+    // UserID hash => address mapping (for resolution)
+    mapping(bytes32 => address) private userIdHashToAddress;
+    
+    // Address => UserID hash mapping (for lookup)
+    mapping(address => bytes32) private addressToUserIdHash;
+    
+    // Short UserID hash (4 bytes) => address mapping (for quick resolution)
+    mapping(bytes4 => address) private shortUserIdToAddress;
+    
     // Events for all permission changes
     event RecordAdded(address indexed patient, string cid, uint256 timestamp, address indexed uploader);
     event AccessGranted(address indexed patient, address indexed accessor, Role role);
     event AccessRevoked(address indexed patient, address indexed accessor, Role role);
     event RoleAssigned(address indexed user, Role role);
+    event UserIdRegistered(address indexed user, bytes32 indexed userIdHash, Role role);
     
     // Modifiers
     modifier onlyRole(Role _role) {
@@ -77,14 +94,16 @@ contract HealthVault {
     /**
      * @dev Patient adds their own health record (CID only)
      * @param _cid IPFS CID of the encrypted health document
+     * @param _filename Original filename of the uploaded document
      */
-    function addPatientRecord(string memory _cid) external onlyRole(Role.PATIENT) {
+    function addPatientRecord(string memory _cid, string memory _filename) external onlyRole(Role.PATIENT) {
         require(bytes(_cid).length > 0, "CID cannot be empty");
         
         Record memory newRecord = Record({
             cid: _cid,
             timestamp: block.timestamp,
-            uploader: msg.sender
+            uploader: msg.sender,
+            filename: _filename
         });
         
         patientRecords[msg.sender].push(newRecord);
@@ -95,8 +114,9 @@ contract HealthVault {
      * @dev Doctor adds a record for a patient (requires patient consent)
      * @param _patient Patient address
      * @param _cid IPFS CID of the medical document (prescription, diagnosis, treatment notes)
+     * @param _filename Original filename of the uploaded document
      */
-    function addDoctorRecord(address _patient, string memory _cid) external onlyRole(Role.DOCTOR) {
+    function addDoctorRecord(address _patient, string memory _cid, string memory _filename) external onlyRole(Role.DOCTOR) {
         require(bytes(_cid).length > 0, "CID cannot be empty");
         require(_patient != address(0), "Invalid patient address");
         require(roles[_patient] == Role.PATIENT, "Target address is not a patient");
@@ -105,7 +125,8 @@ contract HealthVault {
         Record memory newRecord = Record({
             cid: _cid,
             timestamp: block.timestamp,
-            uploader: msg.sender
+            uploader: msg.sender,
+            filename: _filename
         });
         
         patientRecords[_patient].push(newRecord);
@@ -116,8 +137,9 @@ contract HealthVault {
      * @dev Diagnostics lab adds a record for a patient (UPLOAD-ONLY, NO READ ACCESS)
      * @param _patient Patient address
      * @param _cid IPFS CID of the diagnostic report (lab results, test results)
+     * @param _filename Original filename of the uploaded document
      */
-    function addDiagnosticRecord(address _patient, string memory _cid) external onlyRole(Role.DIAGNOSTICS) {
+    function addDiagnosticRecord(address _patient, string memory _cid, string memory _filename) external onlyRole(Role.DIAGNOSTICS) {
         require(bytes(_cid).length > 0, "CID cannot be empty");
         require(_patient != address(0), "Invalid patient address");
         require(roles[_patient] == Role.PATIENT, "Target address is not a patient");
@@ -126,7 +148,8 @@ contract HealthVault {
         Record memory newRecord = Record({
             cid: _cid,
             timestamp: block.timestamp,
-            uploader: msg.sender
+            uploader: msg.sender,
+            filename: _filename
         });
         
         patientRecords[_patient].push(newRecord);
@@ -279,5 +302,105 @@ contract HealthVault {
      */
     function hasDiagnosticsAccess(address _patient, address _diagnostics) external view returns (bool) {
         return diagnosticsAccess[_patient][_diagnostics];
+    }
+    
+    // =====================================================
+    // UserID Registration & Resolution Functions
+    // =====================================================
+    
+    /**
+     * @dev Register a UserID for the caller
+     * UserID hash = keccak256(rolePrefix, msg.sender)
+     * Can only be called once per address
+     */
+    function registerUserId() external {
+        require(roles[msg.sender] != Role.NONE, "Must have a role assigned first");
+        require(addressToUserIdHash[msg.sender] == bytes32(0), "UserID already registered");
+        
+        // Get role prefix string
+        string memory rolePrefix;
+        if (roles[msg.sender] == Role.PATIENT) {
+            rolePrefix = "PAT";
+        } else if (roles[msg.sender] == Role.DOCTOR) {
+            rolePrefix = "DOC";
+        } else if (roles[msg.sender] == Role.DIAGNOSTICS) {
+            rolePrefix = "DIA";
+        } else if (roles[msg.sender] == Role.RESEARCHER) {
+            rolePrefix = "RES";
+        } else {
+            revert("Invalid role for UserID registration");
+        }
+        
+        // Compute UserID hash: keccak256(rolePrefix, address)
+        bytes32 userIdHash = keccak256(abi.encodePacked(rolePrefix, msg.sender));
+        
+        // Extract first 4 bytes (8 hex characters) for short hash
+        bytes4 shortHash = bytes4(userIdHash);
+        
+        // Collision check (extremely unlikely with 256-bit hash)
+        require(userIdHashToAddress[userIdHash] == address(0), "UserID hash collision detected");
+        
+        // Check short hash collision (more likely, but still rare with 4 bytes)
+        if (shortUserIdToAddress[shortHash] != address(0)) {
+            // Short hash collision - this is acceptable since we have the full hash
+            // But we won't be able to resolve using short hash alone
+            shortHash = bytes4(0); // Set to zero to indicate collision
+        }
+        
+        // Store mappings
+        userIdHashToAddress[userIdHash] = msg.sender;
+        addressToUserIdHash[msg.sender] = userIdHash;
+        if (shortHash != bytes4(0)) {
+            shortUserIdToAddress[shortHash] = msg.sender;
+        }
+        
+        emit UserIdRegistered(msg.sender, userIdHash, roles[msg.sender]);
+    }
+    
+    /**
+     * @dev Get the UserID hash for an address
+     * @param _user Address to look up
+     * @return UserID hash (bytes32), or zero if not registered
+     */
+    function getUserIdHash(address _user) external view returns (bytes32) {
+        return addressToUserIdHash[_user];
+    }
+    
+    /**
+     * @dev Resolve a UserID hash to an address
+     * @param _userIdHash UserID hash to resolve
+     * @return Address associated with the UserID, or zero address if not found
+     */
+    function resolveUserId(bytes32 _userIdHash) external view returns (address) {
+        return userIdHashToAddress[_userIdHash];
+    }
+    
+    /**
+     * @dev Check if an address has a registered UserID
+     * @param _user Address to check
+     * @return True if UserID is registered
+     */
+    function hasRegisteredUserId(address _user) external view returns (bool) {
+        return addressToUserIdHash[_user] != bytes32(0);
+    }
+    
+    /**
+     * @dev Compute the expected UserID hash for an address and role
+     * Useful for frontend verification
+     * @param _rolePrefix Role prefix string (PAT, DOC, DIA, RES)
+     * @param _user Address to compute hash for
+     * @return Expected UserID hash
+     */
+    function computeUserIdHash(string memory _rolePrefix, address _user) external pure returns (bytes32) {
+        return keccak256(abi.encodePacked(_rolePrefix, _user));
+    }
+    
+    /**
+     * @dev Resolve a short UserID (8-character hash) to an address
+     * @param _shortHash First 4 bytes (8 hex characters) of the UserID hash
+     * @return Address associated with the short UserID, or zero address if not found or collision
+     */
+    function resolveShortUserId(bytes4 _shortHash) external view returns (address) {
+        return shortUserIdToAddress[_shortHash];
     }
 }

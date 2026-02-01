@@ -1,51 +1,241 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import { motion, AnimatePresence } from "framer-motion";
 import { encryptFileShared, isEncryptionConfigured } from "../utils/sharedEncryption";
 import { uploadToIPFS } from "../utils/ipfs";
+import { 
+  encodeAddressToId, 
+  validatePatientInput,
+  parseUserId,
+  formatFileSize,
+  ROLE_ENUM 
+} from "../utils/userId.js";
 
+/**
+ * DiagnosticsDashboard Component
+ * 
+ * Key Features (Phase 4 Feedback Implementation):
+ * 1. Uses UserID format (DIA-XXXXXXXX) for display
+ * 2. NO recent uploads displayed in UI (still stored for audit)
+ * 3. Pre-checks access BEFORE enabling upload button
+ * 4. Write-only access - no view/download capability
+ */
 export default function DiagnosticsDashboard({ contract, account }) {
-  const [patientAddress, setPatientAddress] = useState("");
+  // Patient selection state
+  const [patientInput, setPatientInput] = useState("");
+  const [patientAddress, setPatientAddress] = useState(null);
+  const [inputError, setInputError] = useState("");
+  
+  // Access control state
+  const [accessStatus, setAccessStatus] = useState(null); // null | 'checking' | 'granted' | 'denied' | 'error'
+  const [canUpload, setCanUpload] = useState(false);
+  
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
   const [encryptionKey, setEncryptionKey] = useState(null);
-  const [hasAccess, setHasAccess] = useState(null); // null = not checked, true/false = checked
-  const [checkingAccess, setCheckingAccess] = useState(false);
-  const [recentUploads, setRecentUploads] = useState([]);
+  
+  // Diagnostics' own UserID
+  const [diagnosticsUserId, setDiagnosticsUserId] = useState("");
+
+  // Generate diagnostics' own UserID on mount
+  useEffect(() => {
+    if (account) {
+      try {
+        const userId = encodeAddressToId(account, 'DIA');
+        setDiagnosticsUserId(userId);
+      } catch (e) {
+        console.error('Failed to generate diagnostics UserID:', e);
+      }
+    }
+  }, [account]);
 
   // Check encryption key on mount
   useEffect(() => {
     checkEncryptionKey();
   }, []);
-  
-  // Load recent uploads when contract is available or changes
-  useEffect(() => {
-    if (contract) {
-      loadRecentUploads();
-    }
-  }, [contract, account]);
 
   // Auto-dismiss messages after 5 seconds
   useEffect(() => {
     if (message) {
-      const timer = setTimeout(() => {
-        setMessage("");
-      }, 5000);
+      const timer = setTimeout(() => setMessage(""), 5000);
       return () => clearTimeout(timer);
     }
   }, [message]);
 
-  // Reset access status when patient address changes
+  // Debounced access check when patient input changes
   useEffect(() => {
-    if (!ethers.isAddress(patientAddress)) {
-      setHasAccess(null);
-    } else {
-      // For diagnostics (write-only role), we can't proactively check access
-      // Access will be determined on first upload attempt
-      setHasAccess(null);
+    const timer = setTimeout(() => {
+      if (patientInput.trim()) {
+        handlePatientInputChange(patientInput);
+      } else {
+        resetPatientState();
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timer);
+  }, [patientInput]);
+
+  // Reset patient-related state
+  const resetPatientState = () => {
+    setPatientAddress(null);
+    setInputError("");
+    setAccessStatus(null);
+    setCanUpload(false);
+  };
+
+  // Handle patient input change with validation and access pre-check
+  const handlePatientInputChange = async (input) => {
+    if (!input.trim()) {
+      resetPatientState();
+      return;
     }
-  }, [patientAddress]);
+
+    const validation = validatePatientInput(input);
+    
+    if (validation.type === 'invalid') {
+      setInputError(validation.error || 'Invalid input');
+      setPatientAddress(null);
+      setAccessStatus(null);
+      setCanUpload(false);
+      return;
+    }
+
+    setInputError("");
+
+    let resolvedAddress = null;
+
+    if (validation.type === 'address') {
+      resolvedAddress = validation.value;
+    } else if (validation.type === 'userId') {
+      // Resolve Patient UserID to address
+      setAccessStatus('checking');
+      
+      try {
+        const { prefix, hash } = parseUserId(validation.value);
+        
+        // Verify it's a patient ID
+        if (prefix !== 'PAT') {
+          setInputError(`Invalid ID type. Expected Patient ID (PAT-XXXXXXXX), got ${prefix}-${hash}`);
+          setAccessStatus(null);
+          setCanUpload(false);
+          return;
+        }
+        
+        const shortHashBytes = '0x' + hash;
+        resolvedAddress = await contract.resolveShortUserId(shortHashBytes);
+        
+        if (!resolvedAddress || resolvedAddress === ethers.ZeroAddress) {
+          setInputError("Patient ID not found. The patient must register their UserID first.");
+          setAccessStatus(null);
+          setCanUpload(false);
+          return;
+        }
+      } catch (err) {
+        console.error('UserID resolution failed:', err);
+        setInputError("Failed to resolve Patient ID. They may not have registered yet.");
+        setAccessStatus(null);
+        setCanUpload(false);
+        return;
+      }
+    }
+
+    if (!resolvedAddress || !ethers.isAddress(resolvedAddress)) {
+      setInputError("Could not resolve to a valid address");
+      setAccessStatus(null);
+      setCanUpload(false);
+      return;
+    }
+
+    // Prevent uploading to self
+    if (resolvedAddress.toLowerCase() === account.toLowerCase()) {
+      setInputError("Cannot upload to your own address");
+      setAccessStatus(null);
+      setCanUpload(false);
+      return;
+    }
+
+    setPatientAddress(resolvedAddress);
+    
+    // PRE-CHECK access BEFORE enabling upload button
+    await checkAccessStatus(resolvedAddress);
+  };
+
+  // Pre-check access status for the patient
+  const checkAccessStatus = async (patientAddr) => {
+    if (!contract || !patientAddr) {
+      setAccessStatus('error');
+      setCanUpload(false);
+      return;
+    }
+
+    try {
+      setAccessStatus('checking');
+      
+      // First verify the address is a patient
+      const patientRole = await contract.getRole(patientAddr);
+      if (Number(patientRole) !== ROLE_ENUM.PATIENT) {
+        setAccessStatus('denied');
+        setInputError("This address is not registered as a Patient");
+        setCanUpload(false);
+        return;
+      }
+
+      // Check if diagnostics has access
+      const hasAccess = await contract.hasDiagnosticsAccess(patientAddr, account);
+      
+      if (hasAccess) {
+        setAccessStatus('granted');
+        setCanUpload(true);
+        setInputError("");
+        
+        // Store in localStorage for audit (but don't display in UI)
+        addToAuditLog(patientAddr, 'access_verified');
+      } else {
+        setAccessStatus('denied');
+        setCanUpload(false);
+      }
+      
+    } catch (error) {
+      console.error("Access check failed:", error);
+      setAccessStatus('error');
+      setInputError("Unable to verify access. Please try again.");
+      setCanUpload(false);
+    }
+  };
+
+  // Store audit log (NOT displayed in UI)
+  const addToAuditLog = (address, action) => {
+    if (!ethers.isAddress(address) || !contract) return;
+    
+    try {
+      const contractAddress = contract?.target || contract?.address;
+      if (!contractAddress) return;
+      
+      const storageKey = `diagnosticsAuditLog_${account}_${contractAddress}`;
+      const stored = localStorage.getItem(storageKey);
+      let auditLog = [];
+      
+      try {
+        auditLog = stored ? JSON.parse(stored) : [];
+      } catch (e) {
+        auditLog = [];
+      }
+      
+      const auditEntry = {
+        address: address,
+        timestamp: Date.now(),
+        action: action
+      };
+      
+      // Keep last 50 for audit
+      const updated = [auditEntry, ...auditLog].slice(0, 50);
+      
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to save audit log:', e);
+    }
+  };
 
   // Check if encryption key is configured
   const checkEncryptionKey = () => {
@@ -55,7 +245,6 @@ export default function DiagnosticsDashboard({ contract, account }) {
     if (!isConfigured) {
       showMessage("⚠️ Encryption key not configured. Please add VITE_ENCRYPTION_KEY to your .env file");
     } else {
-      // Clear any existing error messages when key is configured
       setMessage("");
     }
   };
@@ -63,41 +252,6 @@ export default function DiagnosticsDashboard({ contract, account }) {
   // Show message helper
   const showMessage = (text) => {
     setMessage(text);
-  };
-
-  // Load recent uploads from localStorage
-  const loadRecentUploads = () => {
-    try {
-      const contractAddress = contract?.target || contract?.address;
-      if (!contractAddress) return;
-      
-      const storageKey = `diagnosticsRecentUploads_${account}_${contractAddress}`;
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        setRecentUploads(JSON.parse(stored));
-      }
-    } catch (error) {
-      console.error("Failed to load recent uploads:", error);
-    }
-  };
-
-  // Save upload to recent uploads
-  const saveUploadToRecent = (patientAddr, filename, cid) => {
-    const contractAddress = contract?.target || contract?.address;
-    if (!contractAddress) return;
-    
-    const upload = {
-      patient: patientAddr,
-      filename: filename,
-      cid: cid,
-      timestamp: Date.now(),
-    };
-    
-    const updated = [upload, ...recentUploads].slice(0, 10); // Keep last 10
-    setRecentUploads(updated);
-    
-    const storageKey = `diagnosticsRecentUploads_${account}_${contractAddress}`;
-    localStorage.setItem(storageKey, JSON.stringify(updated));
   };
 
   // Shorten address helper
@@ -111,15 +265,13 @@ export default function DiagnosticsDashboard({ contract, account }) {
     const file = event.target.files[0];
     if (!file) return;
 
-    // Validate file type (PDF only)
     if (file.type !== "application/pdf") {
       showMessage("❌ Only PDF files are supported");
       event.target.value = "";
       return;
     }
 
-    // Validate file size (max 10MB)
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
       showMessage("❌ File size must be less than 10MB");
       event.target.value = "";
@@ -132,12 +284,14 @@ export default function DiagnosticsDashboard({ contract, account }) {
 
   // Handle file upload with encryption
   const handleFileUpload = async (event) => {
-    // Check encryption on first upload attempt
+    if (!canUpload) {
+      showMessage("❌ Cannot upload - access not granted by patient");
+      return;
+    }
+
     if (!encryptionKey) {
       checkEncryptionKey();
-      if (!encryptionKey) {
-        return;
-      }
+      if (!encryptionKey) return;
     }
 
     if (!selectedFile) {
@@ -145,14 +299,8 @@ export default function DiagnosticsDashboard({ contract, account }) {
       return;
     }
 
-    if (!ethers.isAddress(patientAddress)) {
-      showMessage("❌ Please enter a valid patient address");
-      return;
-    }
-
-    // Prevent uploading to self
-    if (patientAddress.toLowerCase() === account.toLowerCase()) {
-      showMessage("❌ Cannot upload to your own address");
+    if (!patientAddress) {
+      showMessage("❌ No patient selected");
       return;
     }
 
@@ -160,36 +308,25 @@ export default function DiagnosticsDashboard({ contract, account }) {
       setUploading(true);
       showMessage("📋 Reading file...");
 
-      // 1. Read file as ArrayBuffer
       const fileData = await readFileAsArrayBuffer(selectedFile);
-      console.log("✓ File read:", fileData.byteLength, "bytes");
 
-      // 2. Encrypt the file
       showMessage("🔐 Encrypting diagnostic report...");
       const encryptedData = encryptFileShared(fileData);
-      console.log("✓ File encrypted");
 
-      // 3. Upload to IPFS
       showMessage("📤 Uploading to IPFS...");
       const cid = await uploadToIPFS(encryptedData, selectedFile.name);
-      console.log("✓ Uploaded to IPFS, CID:", cid);
 
-      // 4. Store record on blockchain
       showMessage("⛓️ Recording on blockchain...");
-      const tx = await contract.addDiagnosticRecord(patientAddress, cid);
-      console.log("✓ Transaction sent:", tx.hash);
+      const tx = await contract.addDiagnosticRecord(patientAddress, cid, selectedFile.name);
       
       showMessage("⏳ Waiting for confirmation...");
       await tx.wait();
-      console.log("✓ Transaction confirmed");
 
-      showMessage(`✅ Diagnostic report uploaded successfully! CID: ${cid.substring(0, 20)}...`);
+      const patientUserId = encodeAddressToId(patientAddress, 'PAT');
+      showMessage(`✅ Diagnostic report uploaded successfully for ${patientUserId}!`);
       
-      // Save to recent uploads
-      saveUploadToRecent(patientAddress, selectedFile.name, cid);
-      
-      // Mark access as granted after successful upload
-      setHasAccess(true);
+      // Save to audit log (not displayed)
+      addToAuditLog(patientAddress, 'upload_success');
       
       setSelectedFile(null);
       document.getElementById("diagnostic-upload").value = "";
@@ -197,27 +334,21 @@ export default function DiagnosticsDashboard({ contract, account }) {
     } catch (error) {
       console.error("Error uploading file:", error);
       
-      // Parse common error types
-      let errorMsg = "";
-      
       if (error.message.includes("No permission") || 
           error.message.includes("has not granted") ||
           error.message.includes("Not authorized") ||
           error.message.includes("missing revert data") ||
           error.code === "CALL_EXCEPTION") {
-        errorMsg = "❌ Access Denied: This patient has not granted you permission. The patient must visit their dashboard and grant Diagnostics Lab access first.";
-        setHasAccess(false);
+        showMessage("❌ Access Denied: Patient has not granted you permission.");
+        setAccessStatus('denied');
+        setCanUpload(false);
       } else if (error.message.includes("ACTION_REJECTED")) {
-        errorMsg = "❌ Transaction rejected by user.";
-      } else if (error.message.includes("network") || error.message.includes("connection")) {
-        errorMsg = "❌ Network error: Please check your connection and try again.";
+        showMessage("❌ Transaction rejected by user.");
       } else if (error.message.includes("insufficient funds")) {
-        errorMsg = "❌ Insufficient funds: Please add ETH to your wallet.";
+        showMessage("❌ Insufficient funds: Please add ETH to your wallet.");
       } else {
-        errorMsg = `❌ Upload failed. Please ensure the patient has granted you access.`;
+        showMessage(`❌ Upload failed: ${error.message}`);
       }
-      
-      showMessage(errorMsg);
     } finally {
       setUploading(false);
     }
@@ -235,6 +366,34 @@ export default function DiagnosticsDashboard({ contract, account }) {
 
   return (
     <div className="space-y-8">
+      {/* Diagnostics' Own UserID Display */}
+      <div className="floating-panel p-4 bg-gradient-to-r from-purple-50 to-violet-50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#8B5CF6] rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm text-[#475569]">Your Diagnostics ID</p>
+              <p className="font-bold text-[#6D28D9] font-mono text-lg">{diagnosticsUserId}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(diagnosticsUserId);
+              showMessage("✅ Diagnostics ID copied to clipboard!");
+            }}
+            className="px-4 py-2 bg-white text-[#8B5CF6] rounded-lg text-sm font-semibold 
+              hover:bg-[#F5F3FF] transition-colors border border-[#DDD6FE]"
+          >
+            Copy ID
+          </button>
+        </div>
+        <p className="text-xs text-[#64748B] mt-2">Share this ID with patients so they can grant you access</p>
+      </div>
+
       {/* Status Message */}
       <AnimatePresence mode="wait">
         {message && (
@@ -278,7 +437,7 @@ export default function DiagnosticsDashboard({ contract, account }) {
             <div>
               <p className="text-[#92400E] font-semibold mb-1">Encryption Key Not Configured</p>
               <p className="text-[#A16207] text-sm">
-                Add <code className="bg-white px-2 py-0.5 rounded text-[#92400E]">VITE_ENCRYPTION_KEY</code> to your .env file for encrypted uploads
+                Add <code className="bg-white px-2 py-0.5 rounded text-[#92400E]">VITE_ENCRYPTION_KEY</code> to your .env file
               </p>
             </div>
           </div>
@@ -291,14 +450,14 @@ export default function DiagnosticsDashboard({ contract, account }) {
         {/* LEFT COLUMN: Patient Selection & Access Status */}
         <div className="floating-panel p-6">
           <div className="flex items-center gap-3 mb-5">
-            <div className="w-10 h-10 bg-[#F5F3FF] rounded-xl flex items-center justify-center">
-              <svg className="w-5 h-5 text-[#8B5CF6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            <div className="w-10 h-10 bg-[#EFF6FF] rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5 text-[#2563EB]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
             <div>
-              <h2 className="text-lg font-bold text-[#0F172A]">Patient Selection</h2>
-              <p className="text-sm text-[#475569]">Enter the patient's wallet address</p>
+              <h2 className="text-lg font-bold text-[#0F172A]">Find Patient</h2>
+              <p className="text-sm text-[#475569]">Enter Patient ID to upload reports</p>
             </div>
           </div>
 
@@ -306,70 +465,88 @@ export default function DiagnosticsDashboard({ contract, account }) {
             {/* Patient Address Input */}
             <div>
               <label className="block text-sm font-medium text-[#0F172A] mb-2">
-                Patient Wallet Address
+                Patient ID
               </label>
-              <input
-                type="text"
-                value={patientAddress}
-                onChange={(e) => setPatientAddress(e.target.value)}
-                placeholder="Enter patient's wallet address (0x...)"
-                className="w-full px-4 py-3 rounded-xl 
-                  focus:outline-none focus:ring-2 focus:ring-[#8B5CF6] focus:border-transparent
-                  placeholder-gray-400 text-[#0F172A] transition-all duration-200"
-                style={{background: 'rgba(255, 255, 255, 0.5)', border: '1px solid rgba(139, 92, 246, 0.15)'}}
-              />
-              <p className="mt-2 text-xs text-[#475569]">
-                Patient must grant Diagnostics access before you can upload
-              </p>
-            </div>
-
-            {/* Access Status Indicator */}
-            {ethers.isAddress(patientAddress) && (
-              <div className="bg-[#F8FAFC] border border-gray-100 rounded-xl p-4">
-                <p className="text-sm font-semibold text-[#0F172A] mb-3">Access Status</p>
-                {hasAccess === true ? (
-                  <div className="flex items-center gap-3 text-sm text-[#16A34A] bg-[#F0FDF4] px-4 py-3 rounded-xl border border-[#BBF7D0]">
-                    <div className="w-8 h-8 bg-[#22C55E] rounded-full flex items-center justify-center">
-                      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <span className="font-semibold">Access Granted</span>
-                  </div>
-                ) : hasAccess === false ? (
-                  <div className="flex items-center gap-3 text-sm text-[#DC2626] bg-[#FEF2F2] px-4 py-3 rounded-xl border border-[#FECACA]">
-                    <div className="w-8 h-8 bg-[#EF4444] rounded-full flex items-center justify-center">
-                      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span className="font-semibold">No Access</span>
-                      <p className="text-xs mt-0.5 text-[#B91C1C]">Patient must grant permission first</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3 text-sm text-[#2563EB] bg-[#EFF6FF] px-4 py-3 rounded-xl border border-[#BFDBFE]">
-                    <div className="w-8 h-8 bg-[#2563EB] rounded-full flex items-center justify-center">
-                      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span className="font-semibold">Ready to Upload</span>
-                      <p className="text-xs mt-0.5 text-[#1D4ED8]">Access status will be verified on upload</p>
-                    </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={patientInput}
+                  onChange={(e) => setPatientInput(e.target.value)}
+                  placeholder="Enter Patient ID (PAT-XXXXXXXX)"
+                  className={`w-full px-4 py-3 bg-white border rounded-xl 
+                    focus:outline-none focus:ring-2 focus:ring-[#8B5CF6] focus:border-transparent
+                    placeholder-gray-400 text-[#0F172A] transition-all duration-200 pr-10
+                    ${inputError ? 'border-red-300' : 'border-gray-200'}`}
+                />
+                {accessStatus === 'checking' && (
+                  <div className="absolute right-4 top-3.5">
+                    <div className="w-5 h-5 border-2 border-[#8B5CF6] border-t-transparent rounded-full animate-spin"></div>
                   </div>
                 )}
+              </div>
+              
+              {/* Input Error */}
+              {inputError && (
+                <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  {inputError}
+                </p>
+              )}
+            </div>
+
+            {/* Access Status Display */}
+            {patientAddress && accessStatus && accessStatus !== 'checking' && (
+              <div className={`p-4 rounded-xl border ${
+                accessStatus === 'granted' 
+                  ? 'bg-[#F0FDF4] border-[#BBF7D0]' 
+                  : accessStatus === 'denied'
+                  ? 'bg-[#FEF2F2] border-[#FECACA]'
+                  : 'bg-[#FFFBEB] border-[#FCD34D]'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    accessStatus === 'granted' ? 'bg-[#22C55E]' : 
+                    accessStatus === 'denied' ? 'bg-[#EF4444]' : 'bg-[#F59E0B]'
+                  }`}>
+                    {accessStatus === 'granted' ? (
+                      <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    ) : accessStatus === 'denied' ? (
+                      <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                  </div>
+                  <div>
+                    <p className={`font-semibold ${
+                      accessStatus === 'granted' ? 'text-[#16A34A]' : 
+                      accessStatus === 'denied' ? 'text-[#DC2626]' : 'text-[#D97706]'
+                    }`}>
+                      {accessStatus === 'granted' ? 'Access Granted — You may upload reports' : 
+                       accessStatus === 'denied' ? 'Access Denied — Patient has not granted you permission' :
+                       'Unable to verify access'}
+                    </p>
+                    <p className="text-sm text-[#475569] mt-1">
+                      Patient: <code className="bg-white px-2 py-0.5 rounded">{encodeAddressToId(patientAddress, 'PAT')}</code>
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 
             {/* Selected Patient Display */}
-            {ethers.isAddress(patientAddress) && (
-              <div className="bg-[#F5F3FF] border border-[#DDD6FE] rounded-xl p-4 animate-slide-up">
+            {patientAddress && accessStatus === 'granted' && (
+              <div className="bg-[#F5F3FF] border border-[#DDD6FE] rounded-xl p-4">
                 <p className="text-sm font-semibold text-[#7C3AED] mb-2">Selected Patient:</p>
                 <code className="text-xs bg-white px-3 py-1.5 rounded-lg text-[#8B5CF6] break-all block">
-                  {patientAddress}
+                  {encodeAddressToId(patientAddress, 'PAT')}
                 </code>
               </div>
             )}
@@ -377,7 +554,7 @@ export default function DiagnosticsDashboard({ contract, account }) {
         </div>
 
         {/* RIGHT COLUMN: Upload Diagnostic Report */}
-        <div className="floating-panel p-6">
+        <div className={`floating-panel p-6 ${!canUpload ? 'opacity-60' : ''}`}>
           <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 bg-[#F0FDFA] rounded-xl flex items-center justify-center">
               <svg className="w-5 h-5 text-[#14B8A6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -401,7 +578,7 @@ export default function DiagnosticsDashboard({ contract, account }) {
                 type="file"
                 accept="application/pdf"
                 onChange={handleFileSelect}
-                disabled={uploading || !ethers.isAddress(patientAddress)}
+                disabled={!canUpload || uploading}
                 className="block w-full text-sm text-[#475569]
                   file:mr-4 file:py-2.5 file:px-5
                   file:rounded-xl file:border-0
@@ -415,10 +592,10 @@ export default function DiagnosticsDashboard({ contract, account }) {
 
             {/* File Preview Card */}
             {selectedFile && (
-              <div className="bg-[#F0FDFA] border border-[#99F6E4] rounded-xl p-4 animate-slide-up">
+              <div className="bg-[#F0FDFA] border border-[#99F6E4] rounded-xl p-4">
                 <p className="text-xs font-semibold text-[#0D9488] mb-3">Selected File</p>
                 <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 icon-bounce" style={{ background: 'rgba(255, 255, 255, 0.4)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255, 255, 255, 0.6)' }}>
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-white border border-gray-100">
                     <svg className="w-6 h-6 text-[#EF4444]" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
                     </svg>
@@ -428,10 +605,7 @@ export default function DiagnosticsDashboard({ contract, account }) {
                       {selectedFile.name}
                     </p>
                     <p className="text-xs text-[#475569] mt-1">
-                      Size: {(selectedFile.size / 1024).toFixed(2)} KB
-                    </p>
-                    <p className="text-xs text-[#475569]">
-                      Type: PDF Document
+                      Size: {formatFileSize(selectedFile.size)}
                     </p>
                   </div>
                 </div>
@@ -441,11 +615,11 @@ export default function DiagnosticsDashboard({ contract, account }) {
             {/* Upload Button */}
             <button
               onClick={handleFileUpload}
-              disabled={!selectedFile || uploading || !ethers.isAddress(patientAddress) || encryptionKey === null}
+              disabled={!canUpload || !selectedFile || uploading || encryptionKey === null}
               className="w-full bg-[#14B8A6] text-white py-3 px-4 rounded-xl hover:bg-[#0D9488] 
                 disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all duration-200
                 focus:outline-none focus:ring-2 focus:ring-[#14B8A6] focus:ring-offset-2
-                flex items-center justify-center gap-2 hover-glow"
+                flex items-center justify-center gap-2"
             >
               {uploading ? (
                 <>
@@ -454,7 +628,7 @@ export default function DiagnosticsDashboard({ contract, account }) {
                 </>
               ) : (
                 <>
-                  <svg className="w-5 h-5 icon-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
                   Encrypt & Upload Report
@@ -462,12 +636,11 @@ export default function DiagnosticsDashboard({ contract, account }) {
               )}
             </button>
 
-            {/* Inline Help */}
-            {hasAccess === false && (
+            {/* Access Warning */}
+            {!canUpload && (
               <div className="bg-[#FEF2F2] border border-[#FECACA] rounded-xl p-4">
-                <p className="text-xs text-[#B91C1C] font-medium">
-                  Cannot Upload: Patient has not granted you access. 
-                  Patient must visit their dashboard and grant "Diagnostics Lab Access".
+                <p className="text-xs text-[#DC2626] font-medium">
+                  ⚠️ Patient must grant you access before you can upload reports
                 </p>
               </div>
             )}
@@ -475,104 +648,32 @@ export default function DiagnosticsDashboard({ contract, account }) {
         </div>
       </div>
 
-      {/* Recent Uploads Section */}
-      {recentUploads.length > 0 && (
-        <div className="lightweight-section p-8">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-1.5 h-8 bg-[#2563EB] rounded-full"></div>
-            <h2 className="text-lg font-bold text-[#0F172A]">Recent Reports Uploaded</h2>
-            <span className="px-3 py-1 bg-[#EFF6FF] text-[#2563EB] rounded-full text-xs font-bold">
-              {recentUploads.length}
-            </span>
-          </div>
-          
-          <div className="overflow-x-auto pb-4 scrollbar-thin">
-            <div className="flex gap-4 min-w-max">
-              {recentUploads.map((upload, index) => (
-                <div
-                  key={index}
-                  className="flex-shrink-0 w-72 rounded-2xl p-5 transition-all duration-200 animate-slide-up"
-                  style={{background: 'rgba(255, 255, 255, 0.6)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255, 255, 255, 0.4)', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)', animationDelay: `${index * 0.1}s`}}
-                  onMouseEnter={(e) => {e.currentTarget.style.boxShadow = '0 4px 12px rgba(20, 184, 166, 0.08)'; e.currentTarget.style.transform = 'translateY(-2px)'}}
-                  onMouseLeave={(e) => {e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.02)'; e.currentTarget.style.transform = 'translateY(0)'}}
-                >
-                  {/* Header */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-bold text-[#0F172A] text-sm truncate mb-2" title={upload.filename}>
-                        {upload.filename}
-                      </h4>
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#F0FDF4] text-[#16A34A] rounded-full text-xs font-semibold border border-[#BBF7D0]">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        Uploaded
-                      </span>
-                    </div>
-                    <div className="w-10 h-10 bg-[#FEF2F2] rounded-xl flex items-center justify-center flex-shrink-0 ml-3">
-                      <svg className="w-5 h-5 text-[#EF4444]" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
-                      </svg>
-                    </div>
-                  </div>
-
-                  {/* Patient */}
-                  <div className="flex items-center gap-2 text-sm text-[#475569] mb-3">
-                    <svg className="w-4 h-4 text-[#94A3B8]" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                    </svg>
-                    {shortenAddress(upload.patient)}
-                  </div>
-
-                  {/* Date */}
-                  <div className="flex items-center gap-2 text-sm text-[#475569] mb-3">
-                    <svg className="w-4 h-4 text-[#94A3B8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    {new Date(upload.timestamp).toLocaleDateString()}
-                  </div>
-
-                  {/* CID */}
-                  <div className="mb-4">
-                    <code className="text-xs bg-[#F8FAFC] px-2.5 py-1.5 rounded-lg text-[#475569] border border-gray-100 block truncate" title={upload.cid}>
-                      {upload.cid.substring(0, 8)}...{upload.cid.substring(upload.cid.length - 6)}
-                    </code>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Bottom Info Bar */}
       <div className="floating-panel p-5">
         <div className="flex items-start gap-4">
           <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255, 255, 255, 0.4)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255, 255, 255, 0.6)' }}>
             <svg className="w-6 h-6 text-[#8B5CF6]" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
             </svg>
           </div>
           <div>
-            <h3 className="text-[#0F172A] font-bold text-lg mb-2">Diagnostics Role (Write-Only)</h3>
+            <h3 className="text-[#0F172A] font-bold text-lg mb-2">How to Upload Reports</h3>
             <ul className="space-y-2">
-              <li className="flex items-center gap-2 text-sm text-[#475569]">
-                <svg className="w-4 h-4 text-[#8B5CF6] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-                You can upload diagnostic reports to patient vaults
+              <li className="flex items-start gap-2 text-sm text-[#475569]">
+                <span className="w-5 h-5 bg-[#8B5CF6] text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">1</span>
+                <span>Share your Diagnostics ID <code className="bg-[#F5F3FF] px-2 py-0.5 rounded text-[#8B5CF6] text-xs">{diagnosticsUserId}</code> with the patient</span>
               </li>
-              <li className="flex items-center gap-2 text-sm text-[#475569]">
-                <svg className="w-4 h-4 text-[#8B5CF6] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-                All files are encrypted before upload for security
+              <li className="flex items-start gap-2 text-sm text-[#475569]">
+                <span className="w-5 h-5 bg-[#8B5CF6] text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">2</span>
+                <span>Patient grants you Diagnostics access from their dashboard</span>
               </li>
-              <li className="flex items-center gap-2 text-sm text-[#475569]">
-                <svg className="w-4 h-4 text-[#8B5CF6] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-                <span>Your wallet: <code className="bg-white px-2 py-0.5 rounded-lg text-[#8B5CF6] text-xs">{shortenAddress(account)}</code></span>
+              <li className="flex items-start gap-2 text-sm text-[#475569]">
+                <span className="w-5 h-5 bg-[#8B5CF6] text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">3</span>
+                <span>Enter patient's ID — access is verified automatically</span>
+              </li>
+              <li className="flex items-start gap-2 text-sm text-[#475569]">
+                <span className="w-5 h-5 bg-[#22C55E] text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">✓</span>
+                <span>Once verified, select a PDF file and click "Encrypt & Upload"</span>
               </li>
             </ul>
           </div>

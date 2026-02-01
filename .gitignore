@@ -24,3 +24,6 @@ frontend/.vite
 # OS
 .DS_Store
 Thumbs.db
+
+# Documentation (preparation materials)
+VIVA_PREPARATION_DOCUMENT.md
