@@ -25,5 +25,9 @@ frontend/.vite
 .DS_Store
 Thumbs.db
 
-# Documentation (preparation materials)
+# Internal / AI-generated documentation (not for public repo)
 VIVA_PREPARATION_DOCUMENT.md
+*_GUIDE.md
+*_IMPLEMENTATION*.md
+FIXES_*.md
+QUICKSTART.md
