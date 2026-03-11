@@ -31,3 +31,7 @@ VIVA_PREPARATION_DOCUMENT.md
 *_IMPLEMENTATION*.md
 FIXES_*.md
 QUICKSTART.md
+
+# Copilot / AI config files
+.github/copilot-instructions.md
+.github/copilot-project-instructions.md
